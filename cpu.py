@@ -44,6 +44,20 @@ class CPU:
                 # aqui ele nao faz basicamente nada, ocupa 1 byte e leva 4 ciclos de clock
                 pass
             
+            #Instrução 0x06: LB B, com d8
+            case 0x06:
+                # Carrega o operando de 8bits (d8) no registro B
+                # Ocupa 2 bytes. Logica quase identicfa ao 0x03
+                
+                #Ler o operador e carregar no ponteiro B
+                value = self.mmu.read_byte(self.PC)
+                self.PC += 1
+
+                #Carregando no ponteiro B
+                self.B = value
+
+                _print(f"0x06 (LD B, d8): Carregado {value:#04x} para B.")          
+
 
             # Instrução 0x0E: LD C, d8 (lê-se load no registrador c um dado de 8bits)
             case 0x0E:
@@ -103,6 +117,22 @@ class CPU:
                 self.PC = address
 
                 _print(f"0xC3 is jump to: {address:#06x}")
+
+            # Instrução 0xC3: JP 
+
+            #Instrução 0x32: LD (HL-), A
+            case 0x32:
+
+                address = (self.H << 8) | self.L
+                
+                self.mmu.write_byte(address, self.A)
+                address -= 1
+                address &= 0xFFFF
+                
+                self.H = (address >> 8) & 0xFF
+                self.L = address & 0xFF
+
+                _print(f"0x32 (LD (HL-), A): Escreveu A({self.A:02x}) em {(address+1):#06x}, HL dec para {address:#06x}")
 
             case _:
                 # Aqui so se o opcode for desconhecido
