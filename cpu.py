@@ -13,17 +13,17 @@ class CPU:
         self.mmu = mmu
 
         # Ponteiros de 8bit (Registradores)
-        self.A = 0x00
-        self.F = 0x00
+        self.A = 0x01
+        self.F = 0xB0
         self.B = 0x00
-        self.C = 0x00
+        self.C = 0x13
         self.D = 0x00
-        self.E = 0x00
-        self.H = 0x00
-        self.L = 0x00
+        self.E = 0xD8
+        self.H = 0x01
+        self.L = 0x4D
 
         # Ponteiros de 16bit (Stack pointer e Program counter)
-        self.SP = 0x0000
+        self.SP = 0xFFFE
         self.PC = 0x0100 #ele ta iniciando a partir do bit256 (em decimal)
         
         #Interrupt Master Enable (IME)
@@ -156,6 +156,30 @@ class CPU:
 
                 _print(f"0x32 (LD (HL-), A): Escreveu A({self.A:02x}) em {(address+1):#06x}, HL dec para {address:#06x}")
             
+            #Instrução 0x31: LD SP, d16
+            case 0x31:
+
+                low_byte = self.mmu.read_byte(self.PC)
+                self.PC +=1
+
+                high_byte = self.mmu.read_byte(self.PC)
+                self.PC += 1
+
+                self.SP = (high_byte << 8) | low_byte
+
+                _print(f"0x31 (LD SP, d16): Stack Pointer definido para {self.SP:#06x}")
+            
+            #instrução 0x36: LD (HL), d8
+            case 0x36:
+                
+                value = self.mmu.read_byte(self.PC)
+                self.PC += 1
+
+                address = (self.H << 8) | self.L
+
+                self.mmu.write_byte(address, value)
+                _print(f"0x36 (LD (HL), d8): Escreveu {value:#02x} no endereço HL({address:#06x})")
+
 
             #Instrução 0x05: (DEC B) B-1
             case 0x05:
@@ -223,6 +247,19 @@ class CPU:
                 self.mmu.write_byte(address, self.A)
                 _print(f"0xE0 (LDH (a8), A): Escreve A({self.A:#02x} em {address:#06x})")
 
+            case 0xEA:
+
+                low_byte = self.mmu.read_byte(self.PC)
+                self.PC += 1
+
+                high_byte = self.mmu.read_byte(self.PC)
+                self.PC += 1
+
+                address = (high_byte << 8) | low_byte
+                
+                self.mmu.write_byte(address, self.A)
+                _print(f"0xEA (LD (a16), A): Armazenou A({self.A:#02x}) no endereço {address:#06x}")
+
             #Instrução 0xF0 LDH A, (a8)
             case 0xF0:
                 
@@ -237,28 +274,31 @@ class CPU:
             
             #Instrução 0xFE:
             case 0xFE: 
-                #Compare A com d8
                 value = self.mmu.read_byte(self.PC)
-                self.PC+=1
+                self.PC += 1
 
-                result = self.A + value
-
-                if result == 0:
+                # CORREÇÃO 1: A lógica é igualdade (ou subtração resultando em 0)
+                if self.A == value:
                     self.F |= FLAG_Z
                 else:
                     self.F &= ~FLAG_Z
 
+                # CORREÇÃO 2: Flag N (Subtract) deve ser SEMPRE ligada em CP
+                self.F |= FLAG_N
+
+                # Half Carry (Se o nibble baixo de A for menor, houve empréstimo)
                 if (self.A & 0x0F) < (value & 0x0F):
                     self.F |= FLAG_H
                 else:
                     self.F &= ~FLAG_H
                 
+                # Carry (Se A for menor que o valor, houve empréstimo/underflow)
                 if self.A < value:
                     self.F |= FLAG_C
                 else: 
                     self.F &= ~FLAG_C
 
-                _print(f"0xFE (CP d8): Comparou A({self.A:#02x}) cin {value:#02x}")
+                _print(f"0xFE (CP d8): Comparou A({self.A:#02x}) com {value:#02x}")
 
             case _:
                 # Aqui so se o opcode for desconhecido
