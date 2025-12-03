@@ -2,6 +2,7 @@ import pygame
 import sys
 from mmu import MMU
 from cpu import CPU
+from ppu import PPU
 from utils import _print
 
 SCREEN_WIDTH = 160
@@ -16,6 +17,7 @@ def main():
     memory_unit.load_rom(ROM_PATH)
 
     cpu = CPU(memory_unit)
+    ppu = PPU(memory_unit)
 
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Emulador myu")
@@ -26,10 +28,15 @@ def main():
             # aqui so para se o bagui for false, ai ele detona tudo
             if event.type == pygame.QUIT:
                 running = False
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RETURN:
-                    _print("(Enter pressionado)")
-                    cpu.step()
+            
+            for _ in range(1000):
+                cpu.step()
+
+                ppu.step()
+            # if event.type == pygame.KEYDOWN:
+            #     if event.key == pygame.K_RETURN:
+            #         _print("(Enter pressionado)")
+                    # cpu.step()
 
         screen.fill((0,0,0))
         pygame.display.flip()

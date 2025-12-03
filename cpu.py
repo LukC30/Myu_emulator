@@ -26,6 +26,9 @@ class CPU:
         self.SP = 0x0000
         self.PC = 0x0100 #ele ta iniciando a partir do bit256 (em decimal)
         
+        #Interrupt Master Enable (IME)
+        self.ime = False
+
         _print(f"Ponto de entrada (PC(Program Counter)) definido para {self.PC} ou 0x0100")
 
     def step(self):
@@ -44,7 +47,14 @@ class CPU:
                 # aqui ele nao faz basicamente nada, ocupa 1 byte e leva 4 ciclos de clock
                 pass
             
-            #Instrução 0x06: LB B, com d8
+
+            #Instrução 0xF3: Interruptor mestre desabilitado
+            case 0xF3:
+                self.ime = False
+                _print(f"0xF3 (DI): Interrupção desabilitada")
+            
+
+            #Instrução 0x06: LD B, com d8
             case 0x06:
                 # Carrega o operando de 8bits (d8) no registro B
                 # Ocupa 2 bytes. Logica quase identicfa ao 0x03
@@ -56,8 +66,16 @@ class CPU:
                 #Carregando no ponteiro B
                 self.B = value
 
-                _print(f"0x06 (LD B, d8): Carregado {value:#04x} para B.")          
+                _print(f"0x06 (LD B, d8): Carregado {value:#04x} para B.")      
 
+            #Instrução 0x3E: Mesma logica do cara de cima
+            case 0x3E:
+                value = self.mmu.read_byte(self.PC)
+                self.PC +=1
+
+                self.A = value
+                _print(f"0x3E (LD A, d8): Carregado {value:#04x} para A")
+                    
 
             # Instrução 0x0E: LD C, d8 (lê-se load no registrador c um dado de 8bits)
             case 0x0E:
@@ -118,23 +136,132 @@ class CPU:
 
                 _print(f"0xC3 is jump to: {address:#06x}")
 
-            # Instrução 0xC3: JP 
 
             #Instrução 0x32: LD (HL-), A
             case 0x32:
-
+                
+                #Aqui recuperamos o endereço armazenado no HL juntando os dois
                 address = (self.H << 8) | self.L
                 
+                #Escrevemos o valor de A na memoria, no endereço que acabamos de recuperar em HL
                 self.mmu.write_byte(address, self.A)
+                
+                # decrementamos HL e garantimos que nao fica vazio
                 address -= 1
                 address &= 0xFFFF
                 
+                #Atualizamos h e l com o novo valor
                 self.H = (address >> 8) & 0xFF
                 self.L = address & 0xFF
 
                 _print(f"0x32 (LD (HL-), A): Escreveu A({self.A:02x}) em {(address+1):#06x}, HL dec para {address:#06x}")
+            
+
+            #Instrução 0x05: (DEC B) B-1
+            case 0x05:
+                #1 Ajustar a flag H (half carry) para calcular
+
+                #eu nao entendi o 0x05
+                if(self.B & 0x0F) == 0:
+                    self.F |= FLAG_H
+                else:
+                    self.F &= ~FLAG_H
+                
+                self.B = (self.B - 1) & 0xFF
+                
+                if self.B == 0:
+                    self.F |= FLAG_Z
+                else:
+                    self.F &= ~FLAG_Z
+                
+                self.F |= FLAG_N
+                _print(f"0x05 (DEC B): B decrementado para {self.B:#04x}")
+            
+            #Mesma logica do cara de cima
+            case 0x0D:
+                if(self.C & 0x0F) == 0:
+                    self.F |= FLAG_H
+                else:
+                    self.F &= ~FLAG_H
+                
+                self.C = (self.C - 1) & 0xFF
+                if self.C == 0:
+                    self.F |= FLAG_Z
+                else:
+                    self.F &= ~FLAG_Z
+                self.F |= FLAG_N
+                _print(f"0x0D (DEC C): C decrementado para {self.C:#04x}")
+
+
+            #Instrução 0x20: JR NZ, r8: jump relative if not zero (so vai pular se a flag 0 estiver desligada)
+            case 0x20:
+                offset = self.mmu.read_byte(self.PC)
+                self.PC += 1
+
+                #Aqui fazemos a conversão de 8-bit unsigned (ou seja, positivo e negativo)
+                #Para 8-bit signed, ou seja, se for maior que 127, vamos tirar 256 (de forma a resetar a contagem)
+                if offset > 127:
+                    offset -= 256
+                
+                if(self.F & FLAG_Z) == 0:
+                    target = self.PC + offset
+                    _print(f"0x20 (JR NZ, r8): condição verdadeira (Z=0). Pulando {offset} para {target:#06x}")
+                    self.PC = target
+                
+                else:
+                    #A condição foi falsa (Z=1). pulamos
+                    _print(f"0x20 (JR NZ, r8): condição falsa (Z=1). Continuando...")
+
+            #Instrução 0xE0 LDH (a8): vai carregar o valor de A na memoria "Alta"
+            case 0xE0:
+                #Aqui a gente vai começar a ter contato com o hardware. vamos pegar o valor que é descrito aqui e somar ao endereço especial da memoria pra hard
+                offset = self.mmu.read_byte(self.PC)
+                self.PC +=1
+                
+                address = 0xFF00 + offset
+
+                self.mmu.write_byte(address, self.A)
+                _print(f"0xE0 (LDH (a8), A): Escreve A({self.A:#02x} em {address:#06x})")
+
+            #Instrução 0xF0 LDH A, (a8)
+            case 0xF0:
+                
+                offset = self.mmu.read_byte(self.PC)
+                self.PC += 1
+                address = 0xFF00 + offset
+
+                value = self.mmu.read_byte(address)
+                self.A = value
+
+                _print(f"0xF0 (LDH A, (a8)): Leu {value:#02x} de {address:#06x} para A")
+            
+            #Instrução 0xFE:
+            case 0xFE: 
+                #Compare A com d8
+                value = self.mmu.read_byte(self.PC)
+                self.PC+=1
+
+                result = self.A + value
+
+                if result == 0:
+                    self.F |= FLAG_Z
+                else:
+                    self.F &= ~FLAG_Z
+
+                if (self.A & 0x0F) < (value & 0x0F):
+                    self.F |= FLAG_H
+                else:
+                    self.F &= ~FLAG_H
+                
+                if self.A < value:
+                    self.F |= FLAG_C
+                else: 
+                    self.F &= ~FLAG_C
+
+                _print(f"0xFE (CP d8): Comparou A({self.A:#02x}) cin {value:#02x}")
 
             case _:
                 # Aqui so se o opcode for desconhecido
                 _print(f"PANIC ERROR: opcode desconhecido kkkkkkkk no {opcode:#04x} em: {self.PC-1:#06x}")
+                exit() #so tirar esse cara aqui depois
                 pass
