@@ -161,6 +161,39 @@ class CPU:
             case 0x79: 
                 self.A = self.C
                 _print(f"0x79 (LD A, C): Copiou C({self.C:#02x}) para A")
+
+
+            # Instrução 0x87: ADD A, A
+            # Soma o valor de A com ele mesmo (A = A + A).
+            # Flags: Z, N=0, H, C.
+            case 0x87:
+                original_value = self.A
+                result = original_value + original_value
+                
+                self.A = result & 0xFF
+                
+                # Z: Zero Flag
+                if self.A == 0:
+                    self.F |= FLAG_Z
+                else:
+                    self.F &= ~FLAG_Z
+                
+                # N: Subtract Flag (Reset)
+                self.F &= ~FLAG_N
+                
+                # H: Half Carry Flag (Verifica carry do bit 3)
+                if (original_value & 0x0F) + (original_value & 0x0F) > 0x0F:
+                    self.F |= FLAG_H
+                else:
+                    self.F &= ~FLAG_H
+                
+                # C: Carry Flag (Verifica se passou de 255)
+                if result > 0xFF:
+                    self.F |= FLAG_C
+                else:
+                    self.F &= ~FLAG_C
+                
+                _print(f"0x87 (ADD A, A): A duplicado para {self.A:#02x}")
             
             # Instrução 0xA1: AND C
             # Realiza um E lógico entre A e C.
@@ -360,6 +393,11 @@ class CPU:
                 self.C = self.A
                 _print(f"0x4F (LD C, A): Copiou A({self.A:#02x}) para C")
 
+            #Instrução 0x5F LD E, A
+            case 0x5F:
+                self.E = self.A
+                _print(f"0x5F (LD E, A): Copiou A({self.A:#02x}) para E")
+
             #Instrução 0x05: (DEC B) B-1
             case 0x05:
                 #1 Ajustar a flag H (half carry) para calcular
@@ -447,6 +485,18 @@ class CPU:
 
                 self.mmu.write_byte(address, self.A)
                 _print(f"0xE0 (LDH (a8), A): Escreve A({self.A:#02x} em {address:#06x})")
+            
+            #Instrução 0xE1 POP HL
+            #Recupera 16bit na pilha e coloca em HL
+            # Usando o conceito de LIFO (Ultimo a entrar é o primeiro a sair) para manipular a pilha, buscamos os valores, o
+            case 0xE1:
+                self.L = self.mmu.read_byte(self.SP)
+                self.SP += 1
+                self.H = self.mmu.read_byte(self.SP)
+                self.SP += 1
+
+                value = (self.H << 8) | self.L
+                _print(f"0xE1 (POP HL): Recuperou {value:#06x} da pilha para HL")
 
             #Instrução 0xE2
             case 0xE2:
@@ -483,6 +533,15 @@ class CPU:
                 
                 self.mmu.write_byte(address, self.A)
                 _print(f"0xEA (LD (a16), A): Armazenou A({self.A:#02x}) no endereço {address:#06x}")
+
+            #Instrução 0xEF: RST 28H
+            case 0xEF:
+                self.SP -= 1
+                self.mmu.write_byte(self.SP, self.PC & 0xFF)
+
+                target_address = 0x0028
+                _print(f"0xEF (RST 28H): Chamada de sistema para {target_address:#06x}")
+                self.PC = target_address
 
             #Instrução 0xF0 LDH A, (a8)
             case 0xF0:
