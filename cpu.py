@@ -157,6 +157,41 @@ class CPU:
                 self.A = self.B
                 _print(f"0x78 (LD A, B): Copiou B({self.B:#02x}) para A")
 
+            #Instrução 0x79 LD A, C
+            case 0x79: 
+                self.A = self.C
+                _print(f"0x79 (LD A, C): Copiou C({self.C:#02x}) para A")
+            
+            # Instrução 0xA1: AND C
+            # Realiza um E lógico entre A e C.
+            # Flags: Z (se zero), N=0, H=1, C=0.
+            case 0xA1:
+                self.A &= self.C
+
+                if self.A == 0:
+                    self.F |= FLAG_Z
+                else:
+                    self.F &= ~FLAG_Z
+    
+                self.F &= ~FLAG_N  
+                self.F |= FLAG_H   
+                self.F &= ~FLAG_C  
+
+                _print(f"0xA1 (AND C): A({self.A:#02x}) AND C({self.C:#02x})")
+
+
+            #Instrução 0xA9: XOR C
+            case 0xA9:
+                self.A = self.A ^ self.C
+
+                if self.A == 0:
+                    self.F |= FLAG_Z
+                else:
+                    self.F &= ~FLAG_Z
+                self.F = self.F & (~(FLAG_N | FLAG_H | FLAG_C))
+                _print(f"0xA9 (XOR C): Registrador zerado, flag atualizada")
+
+
             # Instrução 0xAF: XOR A
             case 0xAF:
                 #XOR A com ele mesmo
@@ -171,7 +206,19 @@ class CPU:
                 # self.F = self.F & (~FLAG_C) # Desliga C
                 _print(f"0xAF (XOR A): Registrador zerado, flag atualizada")
 
-            #Instrução 0xB1: OR C: vai ser realizado um ou logico entre a e C e verifica se B (que está sendo apontado por a) e c sao 0
+            #Instrução 0xB0: OR B
+            case 0xB0:
+                self.A = self.A | self.B
+                if self.A == 0:
+                    self.F |= FLAG_Z
+                else:
+                    self.F &= ~FLAG_Z
+                
+                self.F &= ~(FLAG_N | FLAG_H | FLAG_C)
+                _print(f"0xB0 (OR B): A({self.A:#02x}) | B({self.B:#02x}) -> A")
+            #Mesma coisa do cara debaixo
+
+            #Instrução 0xB1: OR C: vai ser realizado um ou logico entre A e C e verifica se B (que está sendo apontado por A) e c sao 0
             case 0xB1:
                 self.A = self.A | self.C
 
@@ -303,6 +350,15 @@ class CPU:
                 self.mmu.write_byte(address, value)
                 _print(f"0x36 (LD (HL), d8): Write {value:#02x} in address HL({address:#06x})")
 
+            #Instrução 0x47: LD B, A
+            case 0x47:
+                self.B = self.A
+                _print(f"0x47 (LD B, A): Copiou A({self.A:#02x}) para B")
+            
+            #instrução 0x4F: LD C, A
+            case 0x4F: 
+                self.C = self.A
+                _print(f"0x4F (LD C, A): Copiou A({self.A:#02x}) para C")
 
             #Instrução 0x05: (DEC B) B-1
             case 0x05:
