@@ -8,12 +8,13 @@ class Instruction:
 instructions = {
     0x00: Instruction('NOP', 1, 4), 0x10: Instruction('STOP', 2, 4), 0x76: Instruction('HALT', 1, 4),
     0xF3: Instruction('DI', 1, 4), 0xFB: Instruction('EI', 1, 4),
-    
+
     # Loads com Incremento/Decremento (HL)
     0x22: Instruction('LD_(HL+)_A', 1, 8),
     0x32: Instruction('LD_(HL-)_A', 1, 8),
     0x2A: Instruction('LD_A_(HL+)', 1, 8),
     0x3A: Instruction('LD_A_(HL-)', 1, 8),
+
     # Loads 8-bit
     0x06: Instruction('LD_B_d8', 2, 8), 0x0E: Instruction('LD_C_d8', 2, 8), 0x16: Instruction('LD_D_d8', 2, 8),
     0x1E: Instruction('LD_E_d8', 2, 8), 0x26: Instruction('LD_H_d8', 2, 8), 0x2E: Instruction('LD_L_d8', 2, 8),
@@ -22,6 +23,7 @@ instructions = {
     0xFA: Instruction('LD_A_(a16)', 3, 16), 0x47: Instruction('LD_B_A', 1, 4), 0x4F: Instruction('LD_C_A', 1, 4),
     0x57: Instruction('LD_D_A', 1, 4), 0x5F: Instruction('LD_E_A', 1, 4), 0x67: Instruction('LD_H_A', 1, 4),
     0x6F: Instruction('LD_L_A', 1, 4), 0x02: Instruction('LD_(BC)_A', 1, 8), 0x12: Instruction('LD_(DE)_A', 1, 8),
+    0x36: Instruction('LD_(HL)_d8', 2, 12),
     0x77: Instruction('LD_(HL)_A', 1, 8), 0xEA: Instruction('LD_(a16)_A', 3, 16), 0x56: Instruction('LD_D_(HL)', 1, 8),
     0x5E: Instruction('LD_E_(HL)', 1, 8), 0xE0: Instruction('LDH_(a8)_A', 2, 12), 0xF0: Instruction('LDH_A_(a8)', 2, 12),
     0xE2: Instruction('LD_(C)_A', 1, 8), 0xF2: Instruction('LD_A_(C)', 1, 8),
@@ -67,4 +69,14 @@ instructions = {
     
     # Prefix
     0xCB: Instruction('PREFIX_CB', 1, 4),
+
+    # --- Restarts (RST) ---
+    0xC7: Instruction('RST_00H', 1, 16),
+    0xCF: Instruction('RST_08H', 1, 16),
+    0xD7: Instruction('RST_10H', 1, 16),
+    0xDF: Instruction('RST_18H', 1, 16),
+    0xE7: Instruction('RST_20H', 1, 16),
+    0xEF: Instruction('RST_28H', 1, 16),
+    0xF7: Instruction('RST_30H', 1, 16),
+    0xFF: Instruction('RST_38H', 1, 16),
 }

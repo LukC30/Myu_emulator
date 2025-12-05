@@ -143,6 +143,10 @@ class CPU:
                 self.mmu.write_byte((self.H << 8) | self.L, value)
                 self.decrement_hl()
             
+            case '(C)':
+                address = 0xFF00 + self.C
+                self.mmu.write_byte(address, value)
+            
             case '(a16)':
                 #essa daqui eu nao sei fazer pelo amor de deus
                 pass
@@ -379,6 +383,94 @@ class CPU:
     def op_CPL(self, inst, parts):
         self.A = (~self.A) & 0xFF
         self.F |= (FLAG_N | FLAG_H)
+
+    def op_SUB(self, inst, parts):
+        # Ex: SUB_A_B -> parts[2] é a origem
+        val = self.get_operand_value(parts[2])
+        
+        result = self.A - val
+        
+        self.F = FLAG_N # N sempre 1 na subtração
+        
+        if result == 0: self.F |= FLAG_Z
+        if (self.A & 0x0F) < (val & 0x0F): self.F |= FLAG_H # Half Borrow
+        if self.A < val: self.F |= FLAG_C # Full Borrow/Carry
+        
+        self.A = result & 0xFF
+    
+    def op_RST(self, inst, parts):
+        # O nome é RST_38H. O destino está na parte [1] ("38H")
+        # Remove o 'H' e converte de Hex para Int
+        dest_str = parts[1].replace('H', '')
+        dest = int(dest_str, 16)
+        
+        self.SP -= 1
+        self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
+        self.SP -= 1
+        self.mmu.write_byte(self.SP, self.PC & 0xFF)
+        
+        # 2. Pula para o endereço fixo
+        self.PC = dest
+        _print(f"{inst.name}: Chamando rotina em {self.PC:#06x}")
+    
+    def op_LDH(self, inst, parts):
+        dest = parts[1]
+        src = parts[2]
+
+        if dest == '(a8)':
+            offset = self.get_operand_value('a8')
+            address = 0xFF00 + offset
+            
+            val = self.get_operand_value(src) # src é 'A'
+            
+            self.mmu.write_byte(address, val)
+            _print(f"{inst.name}: Escreveu A({val:#02x}) na porta 0xFF{offset:02x}")
+
+        elif src == '(a8)':
+            offset = self.get_operand_value('a8')
+            address = 0xFF00 + offset
+            
+            val = self.mmu.read_byte(address)
+            
+            self.set_operand_value(dest, val) 
+            _print(f"{inst.name}: Leu {val:#02x} da porta 0xFF{offset:02x}")
+
+    def op_PREFIX_CB(self, inst, parts):
+        cb_opcode = self.mmu.read_byte(self.PC)
+        self.PC += 1
+
+        reg_id = cb_opcode & 0x07
+        bit = (cb_opcode >> 3) & 0x07
+        operation = (cb_opcode >> 6) & 0x03
+        
+        reg_map = {0: 'B', 1: 'C', 2: 'D', 3: 'E', 4: 'H', 5: 'L', 6: '(HL)', 7: 'A'}
+        operand_str = reg_map[reg_id]
+
+        if operation == 1: 
+            val = self.get_operand_value(operand_str)
+            is_set = (val >> bit) & 1
+            
+            if is_set == 0:
+                self.F |= FLAG_Z
+            else:
+                self.F &= ~FLAG_Z
+            
+            self.F &= ~FLAG_N 
+            self.F |= FLAG_H  
+            
+        elif operation == 2:
+            val = self.get_operand_value(operand_str)
+            result = val & ~(1 << bit)
+            self.set_operand_value(operand_str, result)
+            
+        elif operation == 3:
+            val = self.get_operand_value(operand_str)
+            result = val | (1 << bit)
+            self.set_operand_value(operand_str, result)
+            
+        # 0. Rotações (RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL)
+        elif operation == 0:
+            pass
 
     def increment_hl(self):
         val = ((self.H << 8) | self.L) + 1
