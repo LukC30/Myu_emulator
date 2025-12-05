@@ -33,6 +33,8 @@ class CPU:
         _print(f"Ponto de entrada (PC(Program Counter)) definido para {self.PC} ou 0x0100")
 
     def step(self):
+
+        self.handle_interrupts()
         opcode = self.mmu.read_byte(self.PC)
 
         if opcode not in instructions:
@@ -52,6 +54,8 @@ class CPU:
         else:
             _print(f"Aviso: Handler não implementado para {instr.name}")
             exit()
+            
+        return instr.cycles
 
     
     def get_operand_value(self, operand_str):
@@ -84,6 +88,14 @@ class CPU:
                 high = self.mmu.read_byte(self.PC)
                 self.PC += 1
                 return (high << 8) | low
+            
+            case '(BC)':
+                addr = (self.B << 8) | self.C
+                return self.mmu.read_byte(addr)
+
+            case '(DE)':
+                addr = (self.D << 8) | self.E
+                return self.mmu.read_byte(addr)
 
             case '(HL)':
                 addr = (self.H << 8) | self.L
@@ -101,6 +113,14 @@ class CPU:
 
             case '(C)':
                  return self.mmu.read_byte(0xFF00 + self.C)
+            
+            case '(a16)':
+                low = self.mmu.read_byte(self.PC)
+                self.PC += 1
+                high = self.mmu.read_byte(self.PC)
+                self.PC += 1
+                addr = (high << 8) | low
+                return self.mmu.read_byte(addr)
         
             case _:
                 _print(f"ERRO: Operando desconhecido {operand_str}")
@@ -130,6 +150,18 @@ class CPU:
             case 'SP':
                 self.SP = value
 
+            case 'AF':
+                self.A = (value >> 8) & 0xFF
+                self.F = value & 0xF0 
+
+            case '(BC)':
+                addr = (self.B << 8) | self.C
+                self.mmu.write_byte(addr, value)
+            
+            case '(DE)':
+                addr = (self.D << 8) | self.E
+                self.mmu.write_byte(addr, value)
+
             #memoria indireta mds
             case '(HL)':
                 addr = (self.H << 8) | self.L
@@ -157,6 +189,53 @@ class CPU:
                 # Escreve o valor nesse endereço
                 self.mmu.write_byte(addr, value)
     
+    def handle_interrupts(self):
+        # Se as interrupções globais estiverem desligadas (DI), ignoramos
+        if not self.ime:
+            return
+
+        # Lê IE (Interrupt Enable - 0xFFFF) e IF (Interrupt Flag - 0xFF0F)
+        ie = self.mmu.read_byte(0xFFFF)
+        if_flag = self.mmu.read_byte(0xFF0F)
+
+        # Verifica quais interrupções estão ATIVAS e HABILITADAS
+        fired = ie & if_flag
+
+        if fired > 0:
+            # VBlank (Bit 0) - Prioridade 1
+            if fired & 0x01:
+                self.service_interrupt(0, 0x0040)
+            # LCD Stat (Bit 1)
+            elif fired & 0x02:
+                self.service_interrupt(1, 0x0048)
+            # Timer (Bit 2)
+            elif fired & 0x04:
+                self.service_interrupt(2, 0x0050)
+            # Serial (Bit 3)
+            elif fired & 0x08:
+                self.service_interrupt(3, 0x0058)
+            # Joypad (Bit 4)
+            elif fired & 0x10:
+                self.service_interrupt(4, 0x0060)
+
+    def service_interrupt(self, bit_n, vector):
+        # 1. Desabilita interrupções globais (o hardware faz isso automaticamente)
+        self.ime = False
+
+        # 2. Limpa a flag da interrupção que atendemos
+        if_flag = self.mmu.read_byte(0xFF0F)
+        if_flag &= ~(1 << bit_n)
+        self.mmu.write_byte(0xFF0F, if_flag)
+
+        # 3. Empurra o PC atual para a Stack (para voltar depois)
+        self.SP -= 1
+        self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
+        self.SP -= 1
+        self.mmu.write_byte(self.SP, self.PC & 0xFF)
+
+        # 4. Pula para o vetor de interrupção
+        self.PC = vector
+
     # ALU: Soma de 8 bits (Usada por ADD e ADC)
     def alu_add(self, value, carry=False):
         c_val = 1 if (carry and (self.F & FLAG_C)) else 0
@@ -169,7 +248,7 @@ class CPU:
         
         self.A = result & 0xFF
         _print(f"ALU ADD: Result {self.A:#02x}")
-        
+
     def add_16_bit(self, source):
         # 1. Pega os valores
         hl = (self.H << 8) | self.L
@@ -433,6 +512,15 @@ class CPU:
         if self.A < val: self.F |= FLAG_C # Full Borrow/Carry
         
         self.A = result & 0xFF
+
+    def op_RETI(self, inst, parts):
+        low = self.mmu.read_byte(self.SP)
+        self.SP += 1
+        high = self.mmu.read_byte(self.SP)
+        self.SP += 1
+
+        self.PC = (high << 8) | low
+        self.ime = True
     
     def op_RST(self, inst, parts):
         # O nome é RST_38H. O destino está na parte [1] ("38H")

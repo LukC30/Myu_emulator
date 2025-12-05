@@ -24,16 +24,15 @@ def main():
     running = True
     while running:
 
-        screen.fill((0,0,0))
         for event in pygame.event.get():
             # aqui so para se o bagui for false, ai ele detona tudo
             if event.type == pygame.QUIT:
                 running = False
             
         for _ in range(1000):
-            cpu.step()
+            cycles_spent = cpu.step()
 
-            ppu.step()
+            ppu.step(cycles_spent)
             # if event.type == pygame.KEYDOWN:
             #     if event.key == pygame.K_RETURN:
             #         _print("(Enter pressionado)")

@@ -58,6 +58,14 @@ instructions = {
     0xAF: Instruction('XOR_A', 1, 4), 0xA9: Instruction('XOR_C', 1, 4), 0xA1: Instruction('AND_C', 1, 4),
     0xE6: Instruction('AND_d8', 2, 8), 0xB0: Instruction('OR_B', 1, 4), 0xB1: Instruction('OR_C', 1, 4),
     
+    0xA0: Instruction('AND_B', 1, 4),
+    0xA2: Instruction('AND_D', 1, 4),
+    0xA3: Instruction('AND_E', 1, 4),
+    0xA4: Instruction('AND_H', 1, 4),
+    0xA5: Instruction('AND_L', 1, 4),
+    0xA6: Instruction('AND_(HL)', 1, 8),
+    0xA7: Instruction('AND_A', 1, 4),
+
     # 16-bit Math
     0x19: Instruction('ADD_HL_DE', 1, 8),
     
@@ -71,7 +79,17 @@ instructions = {
     # Control Flow
     0xC3: Instruction('JP_a16', 3, 16), 0xE9: Instruction('JP_(HL)', 1, 4), 0x18: Instruction('JR_r8', 2, 12), 0x20: Instruction('JR_NZ_r8', 2, 8),
     0xCD: Instruction('CALL_a16', 3, 24), 0xC9: Instruction('RET', 1, 16),
-    
+    0xC0: Instruction('RET_NZ', 1, 8), 
+    0xC8: Instruction('RET_Z', 1, 8),  
+    0xD0: Instruction('RET_NC', 1, 8), 
+    0xD8: Instruction('RET_C', 1, 8),
+    0xD9: Instruction('RETI', 1, 16),
+
+    0x28: Instruction('JR_Z_r8', 2, 8),  
+    0x30: Instruction('JR_NC_r8', 2, 8), 
+    0x38: Instruction('JR_C_r8', 2, 8),
+    0xCA: Instruction('JP_Z_a16', 3, 16),  # <- O erro atual
+
     # Prefix
     0xCB: Instruction('PREFIX_CB', 1, 4),
 
@@ -84,4 +102,22 @@ instructions = {
     0xEF: Instruction('RST_28H', 1, 16),
     0xF7: Instruction('RST_30H', 1, 16),
     0xFF: Instruction('RST_38H', 1, 16),
+
+    # --- 8-Bit INC/DEC ---
+    0x04: Instruction('INC_B', 1, 4), 0x05: Instruction('DEC_B', 1, 4),
+    0x0C: Instruction('INC_C', 1, 4), 0x0D: Instruction('DEC_C', 1, 4),
+    0x14: Instruction('INC_D', 1, 4), 0x15: Instruction('DEC_D', 1, 4),
+    0x1C: Instruction('INC_E', 1, 4), 0x1D: Instruction('DEC_E', 1, 4), 
+    0x24: Instruction('INC_H', 1, 4), 0x25: Instruction('DEC_H', 1, 4),
+    0x2C: Instruction('INC_L', 1, 4), 0x2D: Instruction('DEC_L', 1, 4),
+    0x34: Instruction('INC_(HL)', 1, 12), 0x35: Instruction('DEC_(HL)', 1, 12),
+    0x3C: Instruction('INC_A', 1, 4), 0x3D: Instruction('DEC_A', 1, 4),
+
+    # --- 16-Bit INC/DEC ---
+    0x03: Instruction('INC_BC', 1, 8), 0x0B: Instruction('DEC_BC', 1, 8),
+    0x13: Instruction('INC_DE', 1, 8), 0x1B: Instruction('DEC_DE', 1, 8),
+    0x23: Instruction('INC_HL', 1, 8), 0x2B: Instruction('DEC_HL', 1, 8),
+    0x33: Instruction('INC_SP', 1, 8), 0x3B: Instruction('DEC_SP', 1, 8),
+
+    
 }

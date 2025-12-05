@@ -13,17 +13,27 @@ class PPU():
     def __init__(self, mmu: MMU, screen):
         self.mmu = mmu
         self.screen = screen
+        self.counter = 0
         _print("PPU (Unidade de processamento de video) inicializadaS")
         
 
-    def step(self):
-        ly = self.mmu.read_byte(0xFF44)
+    def step(self, cycles):
+        self.counter += cycles
 
-        if ly == 144:
-            self.render_screen()
+        if self.counter >= 456:
+            self.counter -= 456
+            
+            ly = self.mmu.read_byte(0xFF44)
 
-        ly = (ly + 1) % 154
-        self.mmu.write_byte(0xFF44, ly)
+            if ly == 144:
+                self.render_screen()
+                
+                if_reg = self.mmu.read_byte(0xFF0F)
+                
+                self.mmu.write_byte(0xFF0F, if_reg | 0x01)
+
+            ly = (ly + 1) % 154
+            self.mmu.write_byte(0xFF44, ly)
 
 
     def render_screen(self):
