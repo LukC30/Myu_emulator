@@ -54,7 +54,7 @@ class CPU:
         else:
             _print(f"Aviso: Handler não implementado para {instr.name}")
             exit()
-            
+
         return instr.cycles
 
     
@@ -406,15 +406,20 @@ class CPU:
         self.set_operand_value(target, val)
 
     def op_JP(self, inst, parts):
-        # JP a16 ou JP NZ, a16
-        if len(parts) > 2: # Condicional (JP NZ a16)
+        if len(parts) > 2: 
             cond = parts[1]
-            dest = self.get_operand_value(parts[2]) # Lê o endereço
+            dest = self.get_operand_value(parts[2]) 
             if self.check_condition(cond):
                 self.PC = dest
-        else: # Incondicional (JP a16 ou JP (HL))
-            dest = self.get_operand_value(parts[1])
-            self.PC = dest
+        
+        else: 
+            operand = parts[1]
+            
+            if operand == '(HL)':
+                self.PC = (self.H << 8) | self.L
+            else:
+                dest = self.get_operand_value(operand)
+                self.PC = dest
 
     def op_JR(self, inst, parts):
         # JR r8 ou JR NZ, r8
@@ -592,9 +597,64 @@ class CPU:
             result = val | (1 << bit)
             self.set_operand_value(operand_str, result)
             
-        # 0. Rotações (RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL)
         elif operation == 0:
-            pass
+            rot_type = (cb_opcode >> 3) & 0x07
+            val = self.get_operand_value(operand_str)
+            result = 0
+            
+            # Flags auxiliares
+            carry_flag = 1 if (self.F & FLAG_C) else 0
+            bit7 = (val >> 7) & 1
+            bit0 = val & 1
+
+            match rot_type:
+                case 0:
+                    result = ((val << 1) | bit7) & 0xFF
+                    self.F = FLAG_C if bit7 else 0
+
+                case 1:
+                    result = ((val >> 1) | (bit0 << 7)) & 0xFF
+                    self.F = FLAG_C if bit0 else 0
+
+                # 2: RL (Rotate Left through Carry) - Bit 7 pro Carry, Carry antigo pro Bit 0
+                case 2:
+                    result = ((val << 1) | carry_flag) & 0xFF
+                    self.F = FLAG_C if bit7 else 0
+
+                # 3: RR (Rotate Right through Carry) - Bit 0 pro Carry, Carry antigo pro Bit 7
+                case 3:
+                    result = ((val >> 1) | (carry_flag << 7)) & 0xFF
+                    self.F = FLAG_C if bit0 else 0
+
+                # 4: SLA (Shift Left Arithmetic) - Bit 0 vira 0
+                case 4:
+                    result = (val << 1) & 0xFF
+                    self.F = FLAG_C if bit7 else 0
+
+                # 5: SRA (Shift Right Arithmetic) - Mantém sinal (Bit 7 não muda)
+                case 5:
+                    result = (val >> 1) | (val & 0x80)
+                    self.F = FLAG_C if bit0 else 0
+
+                # 6: SWAP (Troca nibbles)
+                case 6:
+                    result = ((val & 0xF0) >> 4) | ((val & 0x0F) << 4)
+                    self.F = 0 # SWAP limpa todas flags, exceto Z (setado abaixo)
+
+                # 7: SRL (Shift Right Logical) - Bit 7 vira 0
+                case 7:
+                    result = (val >> 1)
+                    self.F = FLAG_C if bit0 else 0
+
+            # Ajuste final da Flag Z (comum a todos)
+            if result == 0:
+                self.F |= FLAG_Z
+            
+            # Flag N e H são sempre zeradas nessas operações
+            self.F &= ~(FLAG_N | FLAG_H)
+
+            # Salva o resultado
+            self.set_operand_value(operand_str, result)
 
     def increment_hl(self):
         val = ((self.H << 8) | self.L) + 1
