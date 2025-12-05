@@ -37,17 +37,27 @@ class PPU():
 
 
     def render_screen(self):
-        tile_map_base = 0x9800
-        tile_data_base = 0x8000
+        lcdc = self.mmu.read_byte(0xFF40)
 
-        # CORREÇÃO 1: O Game Boy tem 18 linhas de tiles (144px / 8 = 18)
+        if (lcdc >> 3) & 1:
+            tile_map_base = 0x9C00
+        else:
+            tile_map_base = 0x9800
+
+        tile_data_unsigned = (lcdc >> 4) & 1
+        tile_data_base = 0x8000 
+
         for y in range(18):
             for x in range(20):
                 tile_index_address = tile_map_base + (y*32) + x
                 tile_index = self.mmu.read_byte(tile_index_address)
                 
-                # Para Tetris (e modo 8000), isso está correto
-                tile_addr = tile_data_base + (tile_index * 16)
+                if tile_data_unsigned:
+                    tile_addr = tile_data_base + (tile_index * 16)
+                else:
+                    if tile_index > 127:
+                        tile_index -= 256
+                    tile_addr = 0x9000 + (tile_index * 16)
 
                 self.render_tiles(x*8, y*8, tile_addr)
 
