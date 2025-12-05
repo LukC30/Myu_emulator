@@ -52,90 +52,74 @@ class PPU():
         return palette
 
     def render_screen(self):
-        """Renderiza a tela inteira levando em conta Scroll e Paleta."""
         lcdc = self.mmu.read_byte(0xFF40)
-
-        # Se o bit 7 do LCDC estiver desligado, a tela está desligada
+        
+        # Se o LCD estiver desligado, não fazemos nada
         if not (lcdc & 0x80):
             return
 
-        # 1. Configurações de Mapa e Dados
-        # Bit 3: Mapa de Tiles do Background (0=9800-9BFF, 1=9C00-9FFF)
+        # --- Configurações (Iguais ao anterior) ---
         tile_map_base = 0x9C00 if (lcdc >> 3) & 1 else 0x9800
-
-        # Bit 4: Dados dos Tiles (0=8800-97FF, 1=8000-8FFF)
         tile_data_unsigned = (lcdc >> 4) & 1
         tile_data_base = 0x8000 
-
-        # 2. Leitura de Scroll
-        scy = self.mmu.read_byte(0xFF42) # Scroll Y
-        scx = self.mmu.read_byte(0xFF43) # Scroll X
         
-        # 3. Obter Paleta atual
+        scy = self.mmu.read_byte(0xFF42)
+        scx = self.mmu.read_byte(0xFF43)
         palette = self.get_bg_palette()
 
-        scale = 2 # Escala para renderização no Pygame
+        # Cria um array de pixels para acesso direto (Muito mais rápido que draw.rect)
+        # O Pygame trava a superfície para escrita rápida
+        pixel_array = pygame.PixelArray(self.screen)
+        
+        # Escala 2x (hardcoded para simplificar, ideal seria dinâmico)
+        scale = 2
 
-        # --- Loop de Renderização (Pixel a Pixel / Linha a Linha) ---
-        # Percorre as 144 linhas da tela do Game Boy
-        for y in range(144):
+        for y in range(144): # Linhas da tela
             
-            # Calcula a posição vertical real no mapa de 256x256 (com wrap-around)
+            # Cálculo da posição Y no mapa com Scroll
             map_y = (y + scy) & 0xFF
-            
-            # Em qual linha dentro do tile (0-7) estamos?
             row_in_tile = map_y % 8
-            
-            # Qual a coordenada Y do tile no mapa (0-31)?
             tile_y = map_y // 8
-
-            for x in range(160):
-                # Calcula a posição horizontal real no mapa
-                map_x = (x + scx) & 0xFF
+            
+            for x in range(160): # Colunas da tela
                 
+                # Cálculo da posição X no mapa com Scroll
+                map_x = (x + scx) & 0xFF
                 col_in_tile = map_x % 8
                 tile_x = map_x // 8
+                
+                # Busca o ID do Tile
+                tile_index = self.mmu.read_byte(tile_map_base + (tile_y * 32) + tile_x)
 
-                # Calcula o endereço do ID do tile no mapa
-                # Mapa tem 32 tiles de largura
-                tile_index_address = tile_map_base + (tile_y * 32) + tile_x
-                tile_index = self.mmu.read_byte(tile_index_address)
-
-                # Calcula o endereço dos dados do tile (16 bytes por tile)
+                # Busca o endereço dos dados
                 if tile_data_unsigned:
-                    # Modo 8000 (0 a 255)
                     tile_addr = tile_data_base + (tile_index * 16)
                 else:
-                    # Modo 8800 (-128 a 127)
-                    if tile_index > 127:
-                        tile_index -= 256
+                    if tile_index > 127: tile_index -= 256
                     tile_addr = 0x9000 + (tile_index * 16)
 
-                # Lê os 2 bytes que definem a linha de pixels atual
-                # Cada linha de 8 pixels usa 2 bytes
+                # Decodificação da cor (2 bits por pixel)
                 byte1 = self.mmu.read_byte(tile_addr + (row_in_tile * 2))
                 byte2 = self.mmu.read_byte(tile_addr + (row_in_tile * 2) + 1)
-
-                # Decodifica a cor do pixel
-                # Bit 7 é o pixel mais à esquerda (0), Bit 0 é o pixel 7
+                
                 bit_index = 7 - col_in_tile
                 low = (byte1 >> bit_index) & 1
                 high = (byte2 >> bit_index) & 1
+                color = palette[(high << 1) | low]
 
-                color_index = (high << 1) | low
+                # --- DESENHO OTIMIZADO ---
+                # Preenchemos os 4 pixels (2x2) correspondentes à escala
+                # Mapeamos a cor RGB para inteiro que o PixelArray entende
+                color_int = self.screen.map_rgb(color)
                 
-                # Mapeia para a cor real usando a paleta
-                color = palette[color_index]
+                base_x = x * scale
+                base_y = y * scale
+                
+                # Desenha o quadrado 2x2 manualmente no array
+                pixel_array[base_x, base_y] = color_int
+                pixel_array[base_x + 1, base_y] = color_int
+                pixel_array[base_x, base_y + 1] = color_int
+                pixel_array[base_x + 1, base_y + 1] = color_int
 
-                # Desenha o pixel na tela do Pygame
-                # Usamos rect para garantir que o pixel preencha o espaço da escala (evita buracos)
-                pygame.draw.rect(
-                    self.screen,
-                    color,
-                    (
-                        x * scale, 
-                        y * scale, 
-                        scale, 
-                        scale
-                    )
-                )
+        # Destrava a superfície para o Pygame poder desenhar na tela
+        pixel_array.close()
