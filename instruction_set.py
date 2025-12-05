@@ -38,7 +38,7 @@ instructions = {
     0x21: Instruction('LD_HL_d16', 3, 12), 0x31: Instruction('LD_SP_d16', 3, 12),
     
     # ALU (INC/DEC)
-    0x04: Instruction('INC_B', 1, 4), 0x05: Instruction('DEC_B', 1, 4), 0x0C: Instruction('INC_C', 1, 4),
+    0x05: Instruction('DEC_B', 1, 4), 0x0C: Instruction('INC_C', 1, 4),
     0x0D: Instruction('DEC_C', 1, 4), 0x23: Instruction('INC_HL', 1, 8), 0x0B: Instruction('DEC_BC', 1, 8),
     
     # ALU (ADD/ADC/SUB/CP)

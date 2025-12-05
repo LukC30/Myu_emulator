@@ -11,10 +11,19 @@ class MMU():
     
     def write_byte(self, address, value):
         
+        # Proteção simples da ROM (0x0000 - 0x7FFF)
         if address < 0x8000:
-            _print(f"Aviso: Tentativa de escrita na ROM no endereço {address:#06x}")
             return
         
+        if address == 0xFF46:
+            start_address = value << 8 
+            for i in range(160): 
+                data = self.read_byte(start_address + i)
+                self.memory[0xFE00 + i] = data
+            
+            self.memory[address] = value & 0xFF
+            return 
+
         self.memory[address] = value & 0xFF
 
     def load_rom(self, rom_path):

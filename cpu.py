@@ -219,15 +219,12 @@ class CPU:
                 self.service_interrupt(4, 0x0060)
 
     def service_interrupt(self, bit_n, vector):
-        # 1. Desabilita interrupções globais (o hardware faz isso automaticamente)
         self.ime = False
 
-        # 2. Limpa a flag da interrupção que atendemos
         if_flag = self.mmu.read_byte(0xFF0F)
         if_flag &= ~(1 << bit_n)
         self.mmu.write_byte(0xFF0F, if_flag)
 
-        # 3. Empurra o PC atual para a Stack (para voltar depois)
         self.SP -= 1
         self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
         self.SP -= 1
@@ -310,14 +307,12 @@ class CPU:
     def op_INC(self, inst, parts):
         target = parts[1]
         
-        # 16 Bits (Não afeta flags)
         if target in ['BC', 'DE', 'HL', 'SP']:
             val = self.get_operand_value(target)
             val = (val + 1) & 0xFFFF
             self.set_operand_value(target, val)
             return
 
-        # 8 Bits (Afeta Z, N, H)
         val = self.get_operand_value(target)
         result = (val + 1) & 0xFF
         self.set_operand_value(target, result)
@@ -332,14 +327,12 @@ class CPU:
     def op_DEC(self, inst, parts):
         target = parts[1]
         
-        # 16 Bits
         if target in ['BC', 'DE', 'HL', 'SP']:
             val = self.get_operand_value(target)
             val = (val - 1) & 0xFFFF
             self.set_operand_value(target, val)
             return
 
-        # 8 Bits
         val = self.get_operand_value(target)
         result = (val - 1) & 0xFF
         self.set_operand_value(target, result)
@@ -354,7 +347,7 @@ class CPU:
     def op_AND(self, inst, parts):
         val = self.get_operand_value(parts[1])
         self.A &= val
-        self.update_logic_flags(h=True) # AND seta H=1 por padrão no GB
+        self.update_logic_flags(h=True) 
 
     def op_OR(self, inst, parts):
         val = self.get_operand_value(parts[1])
@@ -367,10 +360,7 @@ class CPU:
         self.update_logic_flags(h=False)
 
     def op_CP(self, inst, parts):
-        # CP é uma subtração que não salva o resultado
         val = self.get_operand_value(parts[1])
-        # Reutilizamos a lógica de subtração (que você pode criar ou copiar do op_SUB)
-        # Aqui vou fazer direto para simplificar:
         res = self.A - val
         
         self.F = FLAG_N # Seta N
