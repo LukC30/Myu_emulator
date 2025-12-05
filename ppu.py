@@ -10,7 +10,6 @@ COLORS = [
 ]
 
 class PPU():
-
     def __init__(self, mmu: MMU, screen):
         self.mmu = mmu
         self.screen = screen

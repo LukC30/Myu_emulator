@@ -27,6 +27,11 @@ instructions = {
     0x77: Instruction('LD_(HL)_A', 1, 8), 0xEA: Instruction('LD_(a16)_A', 3, 16), 0x56: Instruction('LD_D_(HL)', 1, 8),
     0x5E: Instruction('LD_E_(HL)', 1, 8), 0xE0: Instruction('LDH_(a8)_A', 2, 12), 0xF0: Instruction('LDH_A_(a8)', 2, 12),
     0xE2: Instruction('LD_(C)_A', 1, 8), 0xF2: Instruction('LD_A_(C)', 1, 8),
+    0x7A: Instruction('LD_A_D', 1, 4), 
+    0x7B: Instruction('LD_A_E', 1, 4), 
+    0x7C: Instruction('LD_A_H', 1, 4), 
+    0x7D: Instruction('LD_A_L', 1, 4), 
+    0x7F: Instruction('LD_A_A', 1, 4),
     
     # Loads 16-bit
     0x01: Instruction('LD_BC_d16', 3, 12), 0x11: Instruction('LD_DE_d16', 3, 12),

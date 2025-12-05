@@ -148,8 +148,14 @@ class CPU:
                 self.mmu.write_byte(address, value)
             
             case '(a16)':
-                #essa daqui eu nao sei fazer pelo amor de deus
-                pass
+                low = self.mmu.read_byte(self.PC)
+                self.PC += 1
+                high = self.mmu.read_byte(self.PC)
+                self.PC += 1
+                addr = (high << 8) | low
+                
+                # Escreve o valor nesse endereço
+                self.mmu.write_byte(addr, value)
     
     # ALU: Soma de 8 bits (Usada por ADD e ADC)
     def alu_add(self, value, carry=False):
@@ -163,6 +169,34 @@ class CPU:
         
         self.A = result & 0xFF
         _print(f"ALU ADD: Result {self.A:#02x}")
+        
+    def add_16_bit(self, source):
+        # 1. Pega os valores
+        hl = (self.H << 8) | self.L
+        value = self.get_operand_value(source)
+
+        # 2. Soma
+        result = hl + value
+
+        # 3. Flags (Atenção: ADD HL não muda Z!)
+        self.F &= ~FLAG_N # N = 0
+        
+        # Half-Carry (Overflow do bit 11)
+        if (hl & 0x0FFF) + (value & 0x0FFF) > 0x0FFF:
+            self.F |= FLAG_H
+        else:
+            self.F &= ~FLAG_H
+            
+        # Carry (Overflow do bit 15)
+        if result > 0xFFFF:
+            self.F |= FLAG_C
+        else:
+            self.F &= ~FLAG_C
+
+        # 4. Salva em HL (mantendo 16 bits)
+        result &= 0xFFFF
+        self.H = (result >> 8) & 0xFF
+        self.L = result & 0xFF
 
 
     def op_NOP(self, inst, parts):
@@ -172,7 +206,7 @@ class CPU:
         target = parts[1]
         source = parts[2]
 
-        if target == 'HL': # Caso especial 16 bits
+        if target == 'HL':
             self.add_16_bit(source)
             return
 
@@ -190,6 +224,8 @@ class CPU:
         src = parts[2]
 
         value = self.get_operand_value(src)
+        
+        self.set_operand_value(dest_str, value)
 
         _print(f"{inst.name}: Carregou {value:#04x} em {dest_str}")
     def op_INC(self, inst, parts):
@@ -435,7 +471,7 @@ class CPU:
             self.set_operand_value(dest, val) 
             _print(f"{inst.name}: Leu {val:#02x} da porta 0xFF{offset:02x}")
 
-    def op_PREFIX_CB(self, inst, parts):
+    def op_PREFIX(self, inst, parts):
         cb_opcode = self.mmu.read_byte(self.PC)
         self.PC += 1
 
