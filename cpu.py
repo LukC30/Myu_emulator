@@ -1,11 +1,11 @@
 from mmu import MMU
 from utils import _print
-from typing import Tuple
+from instruction_set import instructions
 
-FLAG_Z = 0b10000000 # Bit 7 (Zero Flag)
-FLAG_N = 0b01000000 # Bit 6 (Subtract Flag)
-FLAG_H = 0b00100000 # Bit 5 (Half-Carry Flag)
-FLAG_C = 0b00010000 # Bit 4 (Carry Flag)
+FLAG_Z = 0x80 # Bit 7 (Zero Flag)
+FLAG_N = 0x40 # Bit 6 (Subtract Flag)
+FLAG_H = 0x20 # Bit 5 (Half-Carry Flag)
+FLAG_C = 0x10 # Bit 4 (Carry Flag)
 
 class CPU:
     def __init__(self, mmu: MMU):
@@ -33,565 +33,363 @@ class CPU:
         _print(f"Ponto de entrada (PC(Program Counter)) definido para {self.PC} ou 0x0100")
 
     def step(self):
-        
-        # começo a pegar o opcode (codigo operacional) a partir do entry point da nossa cpu
-        current_pc = self.PC
         opcode = self.mmu.read_byte(self.PC)
 
+        if opcode not in instructions:
+            _print(f"PANIC: Opcode desconhecido {opcode:#04x} em {self.PC:#06x}")
+            exit()
+
+        instr = instructions[opcode]
         self.PC += 1
-        # olha que legal, da pra formatar os numeros em hexadecimal
-        # #04x = Hex, preenchido com 0, 2 digitos (0x00)
-        # #06x = Hex, preenchido com 0, 4 digitos (0x0000)
-        match opcode:
-            # Instrução 0x00: NOP
-            case 0x00:
-                # aqui ele nao faz basicamente nada, ocupa 1 byte e leva 4 ciclos de clock
-                pass
-            
 
-            #Instrução 0xF3: Interruptor mestre desabilitado
-            case 0xF3:
-                self.ime = False
-                _print(f"0xF3 (DI): Interrupção desabilitada")
-            
+        parts = instr.name.split('_')
+        operation = parts[0]
 
-            #Instrução 0x06: LD B, com d8
-            case 0x06:
-                # Carrega o operando de 8bits (d8) no registro B
-                # Ocupa 2 bytes. Logica quase identicfa ao 0x03
-                
-                #Ler o operador e carregar no ponteiro B
-                value = self.mmu.read_byte(self.PC)
-                self.PC += 1
+        method = getattr(self, f'op_{operation}', None)
 
-                #Carregando no ponteiro B
-                self.B = value
+        if method:
+            method(instr, parts)
+        else:
+            _print(f"Aviso: Handler não implementado para {instr.name}")
+            exit()
 
-                _print(f"0x06 (LD B, d8): Carregado {value:#04x} para B.")      
-
-            #Instrução 0x3E: Mesma logica do cara de cima
-            case 0x3E:
-                value = self.mmu.read_byte(self.PC)
-                self.PC +=1
-
-                self.A = value
-                _print(f"0x3E (LD A, d8): Carregado {value:#04x} para A")
-                    
-
-            # Instrução 0x0E: LD C, d8 (lê-se load no registrador c um dado de 8bits)
-            case 0x0E:
-                #Instrução de 2bytes contendo apenas o 0x0E e o low_byte
-                value = self.mmu.read_byte(self.PC)
-                self.PC+=1
-                self.C = value
-
-                _print(f"0x0E (LD C, d8): Carregado {value:#04x} para registrador C.")
-
-            
-            #Instrução 0x20: JR NZ, r8: jump relative if not zero (so vai pular se a flag 0 estiver desligada)
-            case 0x20:
-                offset = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                #Aqui fazemos a conversão de 8-bit unsigned (ou seja, positivo e negativo)
-                #Para 8-bit signed, ou seja, se for maior que 127, vamos tirar 256 (de forma a resetar a contagem)
-                if offset > 127:
-                    offset -= 256
-                
-                if(self.F & FLAG_Z) == 0:
-                    target = self.PC + offset
-                    _print(f"0x20 (JR NZ, r8): condição verdadeira (Z=0). Pulando {offset} para {target:#06x}")
-                    self.PC = target
-                
-                else:
-                    #A condição foi falsa (Z=1). pulamos
-                    _print(f"0x20 (JR NZ, r8): condição falsa (Z=1). Continuando...")
-
-
-            # Instrução 0x21: LD HL, d16 (lê-se load no registrador HL (ou H + L já que são apartados e quando juntos formam um register de 16bits) um dado de 16bit)
-            case 0x21: 
-                #ocupa 3 bytes por conta do 0x21, low e high_byte
-                low_byte = self.mmu.read_byte(self.PC)
-                self.PC+=1
-
-                high_byte = self.mmu.read_byte(self.PC)
-                self.PC+=1
-                
-                #Nesse caso o H do self.h foi de high e o l do self.l foi de low huahuahuahu
-                self.H = high_byte
-                self.L = low_byte
-
-                address = (high_byte << 8) | low_byte
-                _print(f"0x21 (LD HL, d16): Carregado {address:#06x} para HL.")
-
-            
-            #instrução 0x2A: LDI A, (HL+)
-            case 0x2A:
-
-                address = (self.H << 8) | self.L
-
-                value = self.mmu.read_byte(address)
-                self.A = value
-
-                address += 1
-                address &= 0xFFFF
-
-                self.H = (address >> 8) & 0xFF
-                self.L = address & 0xFF
-                _print(f"0x2A (LDI A, (HL+)): Carregou {value:#02x} de HL, incrementou HL para {address:#06x}")
-
-            #instrução 0x2f: CPL A
-            #Vai inverter to dos os bits do acumulador (A = ~A)
-            case 0x2F:
-                self.A = (~self.A) & 0xFF
-
-                self.F |= FLAG_N
-                self.F |= FLAG_H
-
-                _print(f"0x2F (CPL): Inverteu bits de A para {self.A:#02x}")                
-            
-            
-            #Instrução 0x78, LD A, B
-            #Sim, é literalmente só isso
-            case 0x78:
-                self.A = self.B
-                _print(f"0x78 (LD A, B): Copiou B({self.B:#02x}) para A")
-
-            #Instrução 0x79 LD A, C
-            case 0x79: 
-                self.A = self.C
-                _print(f"0x79 (LD A, C): Copiou C({self.C:#02x}) para A")
-
-
-            # Instrução 0x87: ADD A, A
-            # Soma o valor de A com ele mesmo (A = A + A).
-            # Flags: Z, N=0, H, C.
-            case 0x87:
-                original_value = self.A
-                result = original_value + original_value
-                
-                self.A = result & 0xFF
-                
-                # Z: Zero Flag
-                if self.A == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
-                
-                # N: Subtract Flag (Reset)
-                self.F &= ~FLAG_N
-                
-                # H: Half Carry Flag (Verifica carry do bit 3)
-                if (original_value & 0x0F) + (original_value & 0x0F) > 0x0F:
-                    self.F |= FLAG_H
-                else:
-                    self.F &= ~FLAG_H
-                
-                # C: Carry Flag (Verifica se passou de 255)
-                if result > 0xFF:
-                    self.F |= FLAG_C
-                else:
-                    self.F &= ~FLAG_C
-                
-                _print(f"0x87 (ADD A, A): A duplicado para {self.A:#02x}")
-            
-            # Instrução 0xA1: AND C
-            # Realiza um E lógico entre A e C.
-            # Flags: Z (se zero), N=0, H=1, C=0.
-            case 0xA1:
-                self.A &= self.C
-
-                if self.A == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
     
-                self.F &= ~FLAG_N  
-                self.F |= FLAG_H   
-                self.F &= ~FLAG_C  
+    def get_operand_value(self, operand_str):
+        match operand_str:
+            # --- Registradores de 8 bits ---
+            case 'A': return self.A
+            case 'B': return self.B
+            case 'C': return self.C
+            case 'D': return self.D
+            case 'E': return self.E
+            case 'H': return self.H
+            case 'L': return self.L
 
-                _print(f"0xA1 (AND C): A({self.A:#02x}) AND C({self.C:#02x})")
+            # --- Registradores de 16 bits ---
+            case 'AF': return (self.A << 8) | self.F
+            case 'BC': return (self.B << 8) | self.C
+            case 'DE': return (self.D << 8) | self.E
+            case 'HL': return (self.H << 8) | self.L
+            case 'SP': return self.SP
 
-
-            #Instrução 0xA9: XOR C
-            case 0xA9:
-                self.A = self.A ^ self.C
-
-                if self.A == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
-                self.F = self.F & (~(FLAG_N | FLAG_H | FLAG_C))
-                _print(f"0xA9 (XOR C): Registrador zerado, flag atualizada")
-
-
-            # Instrução 0xAF: XOR A
-            case 0xAF:
-                #XOR A com ele mesmo
-                self.A = 0x00
-
-                self.F = self.F | FLAG_Z
-
-                self.F = self.F & (~(FLAG_N | FLAG_H | FLAG_C))
-                # tem a forma mais facil mas ninguem liga
-                # self.F = self.F & (~FLAG_N) # Desliga N
-                # self.F = self.F & (~FLAG_H) # Desliga H
-                # self.F = self.F & (~FLAG_C) # Desliga C
-                _print(f"0xAF (XOR A): Registrador zerado, flag atualizada")
-
-            #Instrução 0xB0: OR B
-            case 0xB0:
-                self.A = self.A | self.B
-                if self.A == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
-                
-                self.F &= ~(FLAG_N | FLAG_H | FLAG_C)
-                _print(f"0xB0 (OR B): A({self.A:#02x}) | B({self.B:#02x}) -> A")
-            #Mesma coisa do cara debaixo
-
-            #Instrução 0xB1: OR C: vai ser realizado um ou logico entre A e C e verifica se B (que está sendo apontado por A) e c sao 0
-            case 0xB1:
-                self.A = self.A | self.C
-
-                if self.A == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
-                
-                self.F &= ~(FLAG_N | FLAG_H | FLAG_C)
-                _print(f"0xB1 (OR C): Resultado A={self.A:#02x}")
-
-            
-            # Instrução 0xC3: JP a16
-            case 0xC3:
-                #JP a16: jump to adress 16bits (pula para um endereço de 16bit plmds)
-                #ocupa 3 bytes (0xC3, low_byte, high_byte)
-
-                low_byte = self.mmu.read_byte(self.PC)
-                self.PC+=1
-
-                high_byte = self.mmu.read_byte(self.PC)
-                self.PC+=1
-
-                address = (high_byte << 8) | low_byte
-
-                self.PC = address
-
-                _print(f"0xC3 is jump to: {address:#06x}")
-            
-            #Instrução 0xC9 RET
-            #pega o endereço salvo na stack e joga no program counter(PC)
-            case 0xC9:
-                low_byte = self.mmu.read_byte(self.SP)
-                self.SP += 1
-                
-                high_byte = self.mmu.read_byte(self.SP)
-                self.SP += 1
-
-                return_address = (high_byte << 8) | low_byte
-                _print(f"0xC9 (RET): Retornando para {return_address:#06x}")
-
-                self.PC = return_address
-            
-            #Instrução 0xCB: prefixo para operações de bit wtffffffffff
-            case 0xCB:
-                cb_opcode = self.mmu.read_byte(self.PC)
-                self.PC +=1
-                
-                match cb_opcode:
-
-                    case 0x37:
-                        upper_nibble = (self.A & 0xF0)>>4
-                        lower_nibble = (self.A & 0x0F)<<4
-
-                        self.A = lower_nibble | upper_nibble
-
-                        if self.A == 0:
-                            self.F |= FLAG_Z
-                        else: 
-                            self.F &= ~FLAG_Z
-
-                        self.F &= ~(FLAG_N | FLAG_H | FLAG_C)
-
-                        _print(f"0xCB 0x37 (SWAP A): Inverteu nibbles de A para {self.A:#02x}")
-
-                    case _:
-                        _print(f"PANIC ERROR (CB): opcode estendido desconhecido {cb_opcode:#04x} em: {self.PC-2:#06x}")
-                        exit()
-
-            #Instrução 0xCD Call a16
-            #vai chamar uma funcao em um endereço de 16bit
-            case 0xCD:
-                low_byte = self.mmu.read_byte(self.PC)
+            # --- Acesso à Memória (Com efeitos colaterais!) ---
+            case 'd8' | 'a8' | 'r8':
+                val = self.mmu.read_byte(self.PC)
                 self.PC += 1
-                high_byte = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                target_address = (high_byte << 8) | low_byte
-
-                self.SP -= 1
-                self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
-
-                self.SP -= 1
-                self.mmu.write_byte(self.SP, self.PC & 0xFF)
-                
-                _print(f"0xCD (CALL a16): call function in {target_address:#06x}. the return is saved in stack: {self.PC:#06x}")
-                self.PC = target_address
-
-            #Instrução 0x32: LD (HL-), A
-            case 0x32:
-                
-                #Aqui recuperamos o endereço armazenado no HL juntando os dois
-                address = (self.H << 8) | self.L
-                
-                #Escrevemos o valor de A na memoria, no endereço que acabamos de recuperar em HL
-                self.mmu.write_byte(address, self.A)
-                
-                # decrementamos HL e garantimos que nao fica vazio
-                address -= 1
-                address &= 0xFFFF
-                
-                #Atualizamos h e l com o novo valor
-                self.H = (address >> 8) & 0xFF
-                self.L = address & 0xFF
-
-                _print(f"0x32 (LD (HL-), A): Write A({self.A:02x}) in {(address+1):#06x}, HL dec for {address:#06x}")
+                return val
             
-            #Instrução 0x31: LD SP, d16
-            case 0x31:
-
-                low_byte = self.mmu.read_byte(self.PC)
-                self.PC +=1
-
-                high_byte = self.mmu.read_byte(self.PC)
+            case 'd16' | 'a16':
+                low = self.mmu.read_byte(self.PC)
                 self.PC += 1
+                high = self.mmu.read_byte(self.PC)
+                self.PC += 1
+                return (high << 8) | low
 
-                self.SP = (high_byte << 8) | low_byte
+            case '(HL)':
+                addr = (self.H << 8) | self.L
+                return self.mmu.read_byte(addr)
 
-                _print(f"0x31 (LD SP, d16): Stack Pointer defined for {self.SP:#06x}")
+            case '(HL+)':
+                val = self.mmu.read_byte((self.H << 8) | self.L)
+                self.increment_hl()
+                return val
             
-            #instrução 0x36: LD (HL), d8
-            case 0x36:
-                
-                value = self.mmu.read_byte(self.PC)
-                self.PC += 1
+            case '(HL-)':
+                val = self.mmu.read_byte((self.H << 8) | self.L)
+                self.decrement_hl()
+                return val
 
-                address = (self.H << 8) | self.L
+            case '(C)':
+                 return self.mmu.read_byte(0xFF00 + self.C)
+        
+            case _:
+                _print(f"ERRO: Operando desconhecido {operand_str}")
+                return 0
 
-                self.mmu.write_byte(address, value)
-                _print(f"0x36 (LD (HL), d8): Write {value:#02x} in address HL({address:#06x})")
+    def set_operand_value(self, dest, value):
+        match dest:    
+            #para registradores 8 bits
+            case 'A':  self.A = value
+            case 'B':  self.B = value
+            case 'C':  self.C = value
+            case 'D':  self.D = value
+            case 'E':  self.E = value
+            case 'H':  self.H = value
+            case 'L':  self.L = value
 
-            #Instrução 0x47: LD B, A
-            case 0x47:
-                self.B = self.A
-                _print(f"0x47 (LD B, A): Copiou A({self.A:#02x}) para B")
-            
-            #instrução 0x4F: LD C, A
-            case 0x4F: 
-                self.C = self.A
-                _print(f"0x4F (LD C, A): Copiou A({self.A:#02x}) para C")
-
-            #Instrução 0x5F LD E, A
-            case 0x5F:
-                self.E = self.A
-                _print(f"0x5F (LD E, A): Copiou A({self.A:#02x}) para E")
-
-            #Instrução 0x05: (DEC B) B-1
-            case 0x05:
-                #1 Ajustar a flag H (half carry) para calcular
-
-                #eu nao entendi o 0x05
-                if(self.B & 0x0F) == 0:
-                    self.F |= FLAG_H
-                else:
-                    self.F &= ~FLAG_H
-                
-                self.B = (self.B - 1) & 0xFF
-                
-                if self.B == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
-                
-                self.F |= FLAG_N
-                _print(f"0x05 (DEC B): B decrementado para {self.B:#04x}")
-
-            case 0x01:
-                low_byte = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                high_byte = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                self.B = high_byte
-                self.C = low_byte
-
-                value = (self.B << 8) | self.C
-                _print(f"0x01 (LD BC, d16): Loaded {value:#06x} in BC (b and c)")
-
-            #instrucao 0x0B: decrementando B e C = f familia
-            case 0x0B:
-                value = (self.B << 8) | self.C
-                value = (value - 1) & 0xFFFF
-
+            #para registradores 16 bits (juncao de 2 de 8bits, pq essa eh a safadeza)
+            case 'HL':
+                self.H = (value >> 8) & 0xFF
+                self.L = value & 0xFF
+            case 'BC':
                 self.B = (value >> 8) & 0xFF
                 self.C = value & 0xFF
+            case 'DE':
+                self.D = (value >> 8) & 0xFF
+                self.E = value & 0xFF
+            case 'SP':
+                self.SP = value
 
-                _print(f"0x0B (DEC BC): BC decrementado para {value:#06x}")
+            #memoria indireta mds
+            case '(HL)':
+                addr = (self.H << 8) | self.L
+                self.mmu.write_byte(addr, value)
 
-            #instrução 0x0C: incrementando C em 1
-            case 0x0C:
-                if(self.C & 0x0F) == 0x0F:
-                    self.F |= FLAG_H
-                else:
-                    self.F &= ~FLAG_H
-
-                self.C = (self.C + 1) & 0xFF
-
-                if self.C == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
+            case '(HL+)':
+                self.mmu.write_byte((self.H << 8) | self.L, value)
+                self.increment_hl()
                 
-                self.F &= ~FLAG_N
-
-                _print(f"0x0C (INC C): C incrementado para {self.C:#04x}")                
-
-            #vou tentar organizar o codigo fds
-            case 0x0D:
-                if(self.C & 0x0F) == 0:
-                    self.F |= FLAG_H
-                else:
-                    self.F &= ~FLAG_H
-                
-                self.C = (self.C - 1) & 0xFF
-                if self.C == 0:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
-                self.F |= FLAG_N
-                _print(f"0x0D (DEC C): C decrementado para {self.C:#04x}")
-
-
-            #Instrução 0xE0 LDH (a8): vai carregar o valor de A na memoria "Alta"
-            case 0xE0:
-                #Aqui a gente vai começar a ter contato com o hardware. vamos pegar o valor que é descrito aqui e somar ao endereço especial da memoria pra hard
-                offset = self.mmu.read_byte(self.PC)
-                self.PC +=1
-                
-                address = 0xFF00 + offset
-
-                self.mmu.write_byte(address, self.A)
-                _print(f"0xE0 (LDH (a8), A): Escreve A({self.A:#02x} em {address:#06x})")
+            case '(HL-)':
+                self.mmu.write_byte((self.H << 8) | self.L, value)
+                self.decrement_hl()
             
-            #Instrução 0xE1 POP HL
-            #Recupera 16bit na pilha e coloca em HL
-            # Usando o conceito de LIFO (Ultimo a entrar é o primeiro a sair) para manipular a pilha, buscamos os valores, o
-            case 0xE1:
-                self.L = self.mmu.read_byte(self.SP)
-                self.SP += 1
-                self.H = self.mmu.read_byte(self.SP)
-                self.SP += 1
-
-                value = (self.H << 8) | self.L
-                _print(f"0xE1 (POP HL): Recuperou {value:#06x} da pilha para HL")
-
-            #Instrução 0xE2
-            case 0xE2:
-                address = 0xFF00 + self.C
-                self.mmu.write_byte(address, self.A)
-                _print(f"0xE2 (LD (C), A): Escreveu A({self.A:#02x}) na porta de I/O 0xFF00+C ({address:#06x})")
-
-            #Instrução 0xE6: AND d8 (Realiza E logico entre A e o valor imediato)
-            case 0xE6:
-                value = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                self.A &= value
-
-                if self.A == 0:
-                    self.F |= FLAG_Z
-                else: 
-                    self.F &= ~FLAG_Z
-
-                self.F &= ~FLAG_N
-                self.F |= FLAG_H
-                self.F &= ~FLAG_C
-                _print(f"0xE6 (AND d8): A({self.A:#02x}) AND {value:#02x}")
-
-            case 0xEA:
-
-                low_byte = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                high_byte = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                address = (high_byte << 8) | low_byte
-                
-                self.mmu.write_byte(address, self.A)
-                _print(f"0xEA (LD (a16), A): Armazenou A({self.A:#02x}) no endereço {address:#06x}")
-
-            #Instrução 0xEF: RST 28H
-            case 0xEF:
-                self.SP -= 1
-                self.mmu.write_byte(self.SP, self.PC & 0xFF)
-
-                target_address = 0x0028
-                _print(f"0xEF (RST 28H): Chamada de sistema para {target_address:#06x}")
-                self.PC = target_address
-
-            #Instrução 0xF0 LDH A, (a8)
-            case 0xF0:
-                
-                offset = self.mmu.read_byte(self.PC)
-                self.PC += 1
-                address = 0xFF00 + offset
-
-                value = self.mmu.read_byte(address)
-                self.A = value
-
-                _print(f"0xF0 (LDH A, (a8)): Leu {value:#02x} de {address:#06x} para A")
-            
-            #Instrução 0xFB: EI (habilitar interrupções)
-            case 0xFB:
-                self.ime = True
-                _print(f"0xFB (EI): Interrupções Habilitadas (IME = True)")
-            
-            #Instrução 0xFE:
-            case 0xFE: 
-                value = self.mmu.read_byte(self.PC)
-                self.PC += 1
-
-                # CORREÇÃO 1: A lógica é igualdade (ou subtração resultando em 0)
-                if self.A == value:
-                    self.F |= FLAG_Z
-                else:
-                    self.F &= ~FLAG_Z
-
-                # CORREÇÃO 2: Flag N (Subtract) deve ser SEMPRE ligada em CP
-                self.F |= FLAG_N
-
-                # Half Carry (Se o nibble baixo de A for menor, houve empréstimo)
-                if (self.A & 0x0F) < (value & 0x0F):
-                    self.F |= FLAG_H
-                else:
-                    self.F &= ~FLAG_H
-                
-                # Carry (Se A for menor que o valor, houve empréstimo/underflow)
-                if self.A < value:
-                    self.F |= FLAG_C
-                else: 
-                    self.F &= ~FLAG_C
-
-                _print(f"0xFE (CP d8): Comparou A({self.A:#02x}) com {value:#02x}")
-
-            
-
-            case _:
-                # Aqui so se o opcode for desconhecido
-                _print(f"PANIC ERROR: opcode desconhecido kkkkkkkk no {opcode:#04x} em: {self.PC-1:#06x}")
-                exit() #so tirar esse cara aqui depois
+            case '(a16)':
+                #essa daqui eu nao sei fazer pelo amor de deus
                 pass
+    
+    # ALU: Soma de 8 bits (Usada por ADD e ADC)
+    def alu_add(self, value, carry=False):
+        c_val = 1 if (carry and (self.F & FLAG_C)) else 0
+        result = self.A + value + c_val
+        
+        self.F = 0
+        if (result & 0xFF) == 0: self.F |= FLAG_Z
+        if (self.A & 0x0F) + (value & 0x0F) + c_val > 0x0F: self.F |= FLAG_H
+        if result > 0xFF: self.F |= FLAG_C
+        
+        self.A = result & 0xFF
+        _print(f"ALU ADD: Result {self.A:#02x}")
+
+
+    def op_NOP(self, inst, parts):
+        pass
+
+    def op_ADD(self, inst, parts):   
+        target = parts[1]
+        source = parts[2]
+
+        if target == 'HL': # Caso especial 16 bits
+            self.add_16_bit(source)
+            return
+
+        # Lógica 8 bits (ADD A, r)
+        val = self.get_operand_value(source)
+        self.alu_add(val, carry=False)
+    
+    def op_ADC(self, inst, parts):
+        source = parts[2]
+        val = self.get_operand_value(source)
+        self.alu_add(val, carry=False)
+
+    def op_LD(self, inst, parts):
+        dest_str = parts[1]
+        src = parts[2]
+
+        value = self.get_operand_value(src)
+
+        _print(f"{inst.name}: Carregou {value:#04x} em {dest_str}")
+    def op_INC(self, inst, parts):
+        target = parts[1]
+        
+        # 16 Bits (Não afeta flags)
+        if target in ['BC', 'DE', 'HL', 'SP']:
+            val = self.get_operand_value(target)
+            val = (val + 1) & 0xFFFF
+            self.set_operand_value(target, val)
+            return
+
+        # 8 Bits (Afeta Z, N, H)
+        val = self.get_operand_value(target)
+        result = (val + 1) & 0xFF
+        self.set_operand_value(target, result)
+
+        self.F &= ~FLAG_N # N=0
+        if result == 0: self.F |= FLAG_Z
+        else: self.F &= ~FLAG_Z
+        
+        if (val & 0x0F) + 1 > 0x0F: self.F |= FLAG_H
+        else: self.F &= ~FLAG_H
+
+    def op_DEC(self, inst, parts):
+        target = parts[1]
+        
+        # 16 Bits
+        if target in ['BC', 'DE', 'HL', 'SP']:
+            val = self.get_operand_value(target)
+            val = (val - 1) & 0xFFFF
+            self.set_operand_value(target, val)
+            return
+
+        # 8 Bits
+        val = self.get_operand_value(target)
+        result = (val - 1) & 0xFF
+        self.set_operand_value(target, result)
+
+        self.F |= FLAG_N # N=1
+        if result == 0: self.F |= FLAG_Z
+        else: self.F &= ~FLAG_Z
+
+        if (val & 0x0F) == 0: self.F |= FLAG_H
+        else: self.F &= ~FLAG_H
+
+    def op_AND(self, inst, parts):
+        val = self.get_operand_value(parts[1])
+        self.A &= val
+        self.update_logic_flags(h=True) # AND seta H=1 por padrão no GB
+
+    def op_OR(self, inst, parts):
+        val = self.get_operand_value(parts[1])
+        self.A |= val
+        self.update_logic_flags(h=False)
+
+    def op_XOR(self, inst, parts):
+        val = self.get_operand_value(parts[1])
+        self.A ^= val
+        self.update_logic_flags(h=False)
+
+    def op_CP(self, inst, parts):
+        # CP é uma subtração que não salva o resultado
+        val = self.get_operand_value(parts[1])
+        # Reutilizamos a lógica de subtração (que você pode criar ou copiar do op_SUB)
+        # Aqui vou fazer direto para simplificar:
+        res = self.A - val
+        
+        self.F = FLAG_N # Seta N
+        if res == 0: self.F |= FLAG_Z
+        if (self.A & 0x0F) < (val & 0x0F): self.F |= FLAG_H
+        if self.A < val: self.F |= FLAG_C
+
+    def update_logic_flags(self, h):
+        self.F = 0
+        if self.A == 0: self.F |= FLAG_Z
+        if h: self.F |= FLAG_H
+
+    def op_PUSH(self, inst, parts):
+        # PUSH BC -> empurra BC
+        val = self.get_operand_value(parts[1])
+        self.SP -= 1
+        self.mmu.write_byte(self.SP, (val >> 8) & 0xFF)
+        self.SP -= 1
+        self.mmu.write_byte(self.SP, val & 0xFF)
+
+    def op_POP(self, inst, parts):
+        low = self.mmu.read_byte(self.SP)
+        self.SP += 1
+        high = self.mmu.read_byte(self.SP)
+        self.SP += 1
+        val = (high << 8) | low
+        
+        target = parts[1]
+        if target == 'AF':
+            # Cuidado: Bits baixos de F são sempre zero
+            val &= 0xFFF0
+        
+        self.set_operand_value(target, val)
+
+    def op_JP(self, inst, parts):
+        # JP a16 ou JP NZ, a16
+        if len(parts) > 2: # Condicional (JP NZ a16)
+            cond = parts[1]
+            dest = self.get_operand_value(parts[2]) # Lê o endereço
+            if self.check_condition(cond):
+                self.PC = dest
+        else: # Incondicional (JP a16 ou JP (HL))
+            dest = self.get_operand_value(parts[1])
+            self.PC = dest
+
+    def op_JR(self, inst, parts):
+        # JR r8 ou JR NZ, r8
+        offset = 0
+        jump = True
+        
+        if len(parts) > 2: # Condicional
+            cond = parts[1]
+            # O get_operand_value lê o byte assinado? Não, lê unsigned.
+            # Precisamos converter para signed (r8)
+            raw_offset = self.get_operand_value(parts[2])
+            if not self.check_condition(cond):
+                jump = False
+        else: # Incondicional
+            raw_offset = self.get_operand_value(parts[1])
+
+        # Converte para signed
+        if raw_offset > 127: raw_offset -= 256
+        
+        if jump:
+            self.PC += raw_offset
+
+    def op_CALL(self, inst, parts):
+        # CALL a16 ou CALL NZ, a16
+        dest = 0
+        should_call = True
+        
+        if len(parts) > 2: # Condicional
+            dest = self.get_operand_value(parts[2])
+            if not self.check_condition(parts[1]):
+                should_call = False
+        else:
+            dest = self.get_operand_value(parts[1])
+            
+        if should_call:
+            # Push PC
+            self.SP -= 1
+            self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
+            self.SP -= 1
+            self.mmu.write_byte(self.SP, self.PC & 0xFF)
+            self.PC = dest
+
+    def op_RET(self, inst, parts):
+        # RET ou RET NZ
+        if len(parts) > 1: # Condicional
+            if not self.check_condition(parts[1]):
+                return # Não retorna
+
+        # Pop PC
+        low = self.mmu.read_byte(self.SP)
+        self.SP += 1
+        high = self.mmu.read_byte(self.SP)
+        self.SP += 1
+        self.PC = (high << 8) | low
+
+    def check_condition(self, cond):
+        if cond == 'NZ': return not (self.F & FLAG_Z)
+        if cond == 'Z': return (self.F & FLAG_Z)
+        if cond == 'NC': return not (self.F & FLAG_C)
+        if cond == 'C': return (self.F & FLAG_C)
+        return False
+    
+    def op_DI(self, inst, parts): self.ime = False
+    def op_EI(self, inst, parts): self.ime = True
+    def op_NOP(self, inst, parts): pass
+    def op_HALT(self, inst, parts): _print("HALT (Não implementado fully)")
+    def op_STOP(self, inst, parts): pass
+    
+    # Rotações Básicas
+    def op_RLCA(self, inst, parts):
+        bit7 = (self.A >> 7) & 1
+        self.A = ((self.A << 1) | bit7) & 0xFF
+        self.F = FLAG_C if bit7 else 0
+        
+    def op_RLA(self, inst, parts):
+        bit7 = (self.A >> 7) & 1
+        carry = 1 if (self.F & FLAG_C) else 0
+        self.A = ((self.A << 1) | carry) & 0xFF
+        self.F = FLAG_C if bit7 else 0
+        
+    def op_CPL(self, inst, parts):
+        self.A = (~self.A) & 0xFF
+        self.F |= (FLAG_N | FLAG_H)
+
+    def increment_hl(self):
+        val = ((self.H << 8) | self.L) + 1
+        val &= 0xFFFF
+        self.H = (val >> 8) & 0xFF
+        self.L = val & 0xFF
+
+    def decrement_hl(self):
+        val = ((self.H << 8) | self.L) - 1
+        val &= 0xFFFF
+        self.H = (val >> 8) & 0xFF
+        self.L = val & 0xFF
+
+    
