@@ -36,12 +36,17 @@ def main():
 
     clock = pygame.time.Clock()
     running = True
-    
-    # --- VARIÁVEL CRÍTICA ---
-    # Acumulador para o registrador DIV
+
     div_counter = 0
     
+    btn_cooldowns = {k: 0 for k in key_map.values()}
+
     while running:
+
+        for btn in btn_cooldowns:
+            if btn_cooldowns[btn] > 0:
+                btn_cooldowns[btn] -=1
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -49,12 +54,14 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key in key_map:
                     btn = key_map[event.key]
-                    memory_unit.buttons[btn] = True
+                    if btn_cooldowns[btn] == 0:
+                        memory_unit.press_button(btn) 
+                        btn_cooldowns[btn] = 15
 
             if event.type == pygame.KEYUP:
                 if event.key in key_map:
                     btn = key_map[event.key]
-                    memory_unit.buttons[btn] = False
+                    memory_unit.release_button(btn)
 
         cycles_this_frame = 0
         while cycles_this_frame < CYCLES_PER_FRAME:

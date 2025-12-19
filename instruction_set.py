@@ -31,7 +31,7 @@ instructions = {
     0x7B: Instruction('LD_A_E', 1, 4), 
     0x7C: Instruction('LD_A_H', 1, 4), 
     0x7D: Instruction('LD_A_L', 1, 4), 
-    0x7F: Instruction('LD_A_A', 1, 4),
+    0x7F: Instruction('LD_A_A', 1, 4), 0xF9: Instruction('LD_SP_HL', 1, 8),
     
     # Loads 16-bit
     0x01: Instruction('LD_BC_d16', 3, 12), 0x11: Instruction('LD_DE_d16', 3, 12),

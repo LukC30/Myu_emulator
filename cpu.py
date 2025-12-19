@@ -276,6 +276,10 @@ class CPU:
         dest_str = parts[1]
         src = parts[2]
 
+        if dest_str == "SP" and src == 'HL':
+            self.SP = (self.H << 8) | self.L
+            return
+
         if dest_str == "(a16)" and src == 'SP':
             addr = self.get_operand_value('a16')
 
@@ -650,7 +654,7 @@ class CPU:
         a = self.A
 
         if not (self.F & FLAG_N):
-            if(self.F & FLAG_H) or (a > 0x0F) > 9:
+            if(self.F & FLAG_H) or (a & 0x0F) > 9:
                 a += 0x06
             if(self.F & FLAG_C) or (a > 0x9F):
                 a += 0x60
@@ -668,7 +672,6 @@ class CPU:
         self.F &= ~FLAG_H
 
     def op_LD_HL_SP (self, inst, parts):
-
         offset = self.get_operand_value('r8')
         if offset > 127: offset -= 256
 
@@ -679,7 +682,7 @@ class CPU:
         if (sp_val & 0x0F) + (offset & 0x0F) > 0x0F: self.F |= FLAG_H
         if (sp_val & 0xFF) + (offset & 0xFF) > 0xFF: self.F |= FLAG_C
 
-        self.H = (result >> 8) & 0x0F
+        self.H = (result >> 8) & 0xFF
         self.L = result & 0xFF
         return 
     
