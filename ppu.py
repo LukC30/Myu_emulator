@@ -10,7 +10,7 @@ class PPU:
         self.mmu = mmu
         self.screen = screen
         self.counter = 0
-        # Buffer RGB rápido
+        # Buffer de bytes RGB (Muito rápido)
         self.buffer = bytearray(160 * 144 * 3)
         print("PPU (Buffer Mode) inicializada")
 
@@ -21,8 +21,10 @@ class PPU:
             self.counter -= 456
             ly = self.mmu.read_byte(0xFF44)
             
+            # Renderiza apenas no final da tela visível (Linha 144)
             if ly == 144:
                 self.render_screen()
+                # Solicita Interrupção VBlank (Bit 0)
                 if_reg = self.mmu.read_byte(0xFF0F)
                 self.mmu.write_byte(0xFF0F, if_reg | 0x01)
 
@@ -35,6 +37,7 @@ class PPU:
 
     def render_screen(self):
         lcdc = self.mmu.read_byte(0xFF40)
+        # Se LCD desligado, não desenha (evita lixo na tela)
         if not (lcdc & 0x80): return
 
         tile_map_base = 0x9C00 if (lcdc >> 3) & 1 else 0x9800
@@ -44,8 +47,6 @@ class PPU:
         scy = self.mmu.read_byte(0xFF42)
         scx = self.mmu.read_byte(0xFF43)
         palette = self.get_bg_palette()
-
-        # Otimização de leitura
         read_byte = self.mmu.read_byte 
         
         idx = 0
@@ -82,10 +83,7 @@ class PPU:
                 self.buffer[idx+2] = b
                 idx += 3
 
-        # Renderização Segura (Corrige o erro de formato)
+        # Cria a imagem e escala (Blit corrige o formato)
         image = pygame.image.frombuffer(self.buffer, (160, 144), 'RGB')
-        
-        # Cria uma NOVA superfície escalada (evita o ValueError)
         scaled_image = pygame.transform.scale(image, (320, 288))
-        
         self.screen.blit(scaled_image, (0, 0))

@@ -1,5 +1,5 @@
 from mmu import MMU
-# from utils import _print # Não precisamos mais importar o print
+# from utils import _print # Logs desligados para performance
 from instruction_set import instructions
 
 FLAG_Z = 0x80
@@ -9,7 +9,7 @@ FLAG_C = 0x10
 
 class CPU:
     def __init__(self, mmu: MMU):
-        print("CPU inicializada") # Print normal apenas na inicialização é ok
+        print("CPU Blindada inicializada")
         self.mmu = mmu
 
         self.A = 0x01
@@ -29,47 +29,47 @@ class CPU:
     def step(self):
         self.handle_interrupts()
         
-        # Leitura direta sem verificações excessivas
+        # BLINDAGEM 1: Garante que PC esteja sempre dentro de 16-bits
+        self.PC &= 0xFFFF
+        
         opcode = self.mmu.read_byte(self.PC)
 
         if opcode not in instructions:
-            # Em caso de erro fatal, usamos print normal
-            print(f"PANIC: Opcode desconhecido {opcode:#04x} em {self.PC:#06x}")
-            exit()
+            # Em vez de fechar o emulador, pulamos a instrução inválida
+            # Isso evita fechar a janela em caso de bugs menores
+            self.PC = (self.PC + 1) & 0xFFFF
+            return 4 
 
         instr = instructions[opcode]
-        self.PC += 1
+        self.PC = (self.PC + 1) & 0xFFFF # Incremento seguro
 
-        # OTIMIZAÇÃO: Cache de método
-        # Em vez de fazer split string toda vez, idealmente a instrução já teria o tipo.
-        # Mas para manter compatibilidade com seu instruction_set atual, vamos simplificar o dispatch:
+        if instr.name == "LD_HL_SP+r8":
+            parts = instr.name.split('_')
+            self.op_LD_HL_SP(instr, parts)
+            return instr.cycles
         
-        # O nome da instrução é tipo 'LD_A_B'. Pegamos tudo antes do primeiro '_'
-        # Isso é mais rápido que split completo
+        # Dispatch Otimizado
         op_name = instr.name
         idx = op_name.find('_')
         if idx != -1:
             operation = op_name[:idx]
-            parts = op_name.split('_') # Ainda necessário para os argumentos
+            parts = op_name.split('_')
         else:
             operation = op_name
             parts = [op_name]
 
-        # Dispatch direto
         method = getattr(self, f'op_{operation}', None)
 
         if method:
             method(instr, parts)
         else:
-            print(f"Aviso: Handler não implementado para {instr.name}")
-            exit()
+            # print(f"Aviso: Handler não implementado para {instr.name}")
+            pass
 
         return instr.cycles
 
     
     def get_operand_value(self, operand_str):
-        # Removida a conversão match/case excessiva para ifs simples onde ganha performance em Python < 3.10
-        # Mas mantendo structure para legibilidade.
         match operand_str:
             case 'A': return self.A
             case 'B': return self.B
@@ -87,29 +87,23 @@ class CPU:
 
             case 'd8' | 'a8' | 'r8':
                 val = self.mmu.read_byte(self.PC)
-                self.PC += 1
+                self.PC = (self.PC + 1) & 0xFFFF
                 return val
             
             case 'd16' | 'a16':
                 low = self.mmu.read_byte(self.PC)
-                self.PC += 1
+                self.PC = (self.PC + 1) & 0xFFFF
                 high = self.mmu.read_byte(self.PC)
-                self.PC += 1
+                self.PC = (self.PC + 1) & 0xFFFF
                 return (high << 8) | low
             
-            case '(BC)':
-                return self.mmu.read_byte((self.B << 8) | self.C)
-
-            case '(DE)':
-                return self.mmu.read_byte((self.D << 8) | self.E)
-
-            case '(HL)':
-                return self.mmu.read_byte((self.H << 8) | self.L)
+            case '(BC)': return self.mmu.read_byte((self.B << 8) | self.C)
+            case '(DE)': return self.mmu.read_byte((self.D << 8) | self.E)
+            case '(HL)': return self.mmu.read_byte((self.H << 8) | self.L)
 
             case '(HL+)':
                 hl = (self.H << 8) | self.L
                 val = self.mmu.read_byte(hl)
-                # Incremento Inline para performance
                 hl = (hl + 1) & 0xFFFF
                 self.H = (hl >> 8) & 0xFF
                 self.L = hl & 0xFF
@@ -123,19 +117,17 @@ class CPU:
                 self.L = hl & 0xFF
                 return val
 
-            case '(C)':
-                 return self.mmu.read_byte(0xFF00 + self.C)
+            case '(C)': return self.mmu.read_byte(0xFF00 + self.C)
             
             case '(a16)':
                 low = self.mmu.read_byte(self.PC)
-                self.PC += 1
+                self.PC = (self.PC + 1) & 0xFFFF
                 high = self.mmu.read_byte(self.PC)
-                self.PC += 1
+                self.PC = (self.PC + 1) & 0xFFFF
                 addr = (high << 8) | low
                 return self.mmu.read_byte(addr)
         
             case _:
-                print(f"ERRO: Operando desconhecido {operand_str}")
                 return 0
 
     def set_operand_value(self, dest, value):
@@ -158,20 +150,15 @@ class CPU:
                 self.D = (value >> 8) & 0xFF
                 self.E = value & 0xFF
             case 'SP':
-                self.SP = value
+                self.SP = value & 0xFFFF # BLINDAGEM SP
 
             case 'AF':
                 self.A = (value >> 8) & 0xFF
                 self.F = value & 0xF0 
 
-            case '(BC)':
-                self.mmu.write_byte((self.B << 8) | self.C, value)
-            
-            case '(DE)':
-                self.mmu.write_byte((self.D << 8) | self.E, value)
-
-            case '(HL)':
-                self.mmu.write_byte((self.H << 8) | self.L, value)
+            case '(BC)': self.mmu.write_byte((self.B << 8) | self.C, value)
+            case '(DE)': self.mmu.write_byte((self.D << 8) | self.E, value)
+            case '(HL)': self.mmu.write_byte((self.H << 8) | self.L, value)
 
             case '(HL+)':
                 hl = (self.H << 8) | self.L
@@ -187,14 +174,13 @@ class CPU:
                 self.H = (hl >> 8) & 0xFF
                 self.L = hl & 0xFF
             
-            case '(C)':
-                self.mmu.write_byte(0xFF00 + self.C, value)
+            case '(C)': self.mmu.write_byte(0xFF00 + self.C, value)
             
             case '(a16)':
                 low = self.mmu.read_byte(self.PC)
-                self.PC += 1
+                self.PC = (self.PC + 1) & 0xFFFF
                 high = self.mmu.read_byte(self.PC)
-                self.PC += 1
+                self.PC = (self.PC + 1) & 0xFFFF
                 addr = (high << 8) | low
                 self.mmu.write_byte(addr, value)
     
@@ -219,10 +205,12 @@ class CPU:
         if_flag &= ~(1 << bit_n)
         self.mmu.write_byte(0xFF0F, if_flag)
 
-        self.SP -= 1
+        # BLINDAGEM NA STACK
+        self.SP = (self.SP - 1) & 0xFFFF
         self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
-        self.SP -= 1
+        self.SP = (self.SP - 1) & 0xFFFF
         self.mmu.write_byte(self.SP, self.PC & 0xFF)
+
         self.PC = vector
 
     def alu_add(self, value, carry=False):
@@ -235,7 +223,6 @@ class CPU:
         if result > 0xFF: self.F |= FLAG_C
         
         self.A = result & 0xFF
-        # _print removido
 
     def add_16_bit(self, source):
         hl = (self.H << 8) | self.L
@@ -252,58 +239,110 @@ class CPU:
         self.H = (result >> 8) & 0xFF
         self.L = result & 0xFF
 
-    def op_NOP(self, inst, parts): pass
+
+    def op_NOP(self, inst, parts):
+        pass
 
     def op_ADD(self, inst, parts):   
         target = parts[1]
         source = parts[2]
-        if target == 'HL':
-            self.add_16_bit(source)
-            return
+
+        match target: 
+            case 'HL':
+                self.add_16_bit(source)
+                return
+            
+            case 'SP':
+                offset = self.get_operand_value(source)
+                if offset > 127: offset -= 256
+                sp_val = self.SP
+
+                self.F = 0
+                if(sp_val & 0x0F) + (offset & 0x0F) > 0x0F: self.F |= FLAG_H
+                if(sp_val & 0xFF) + (offset & 0xFF) > 0xFF: self.F |= FLAG_C
+
+                self.SP = (self.SP + offset) & 0xFFFF
+                return
+
         val = self.get_operand_value(source)
         self.alu_add(val, carry=False)
     
     def op_ADC(self, inst, parts):
         source = parts[2]
         val = self.get_operand_value(source)
-        self.alu_add(val, carry=True) # Correção: carry=True para ADC
+        self.alu_add(val, carry=True)
 
     def op_LD(self, inst, parts):
         dest_str = parts[1]
         src = parts[2]
+
+        if dest_str == "(a16)" and src == 'SP':
+            addr = self.get_operand_value('a16')
+
+            self.mmu.write_byte(addr, self.SP & 0xFF)
+            self.mmu.write_byte((addr + 1) & 0xFFFF, (self.SP >> 8) & 0xFF)
+
+            return
+
+        if dest_str == 'HL' and src == 'SP+r8':
+            offset = self.get_operand_value('r8')
+            if offset > 127: offset -= 256
+
+            sp_val = self.SP
+            result = (sp_val + offset) & 0xFFFF
+
+            self.F = 0
+            if(sp_val&0x0F)+(offset&0x0F)>0x0F: self.F |= FLAG_H
+            if(sp_val&0xFF)+(offset&0xFF)>0xFF: self.F |= FLAG_C
+
+            self.H = (result >> 8) & 0xFF
+            self.L = result & 0xFF
+            return
+            
         value = self.get_operand_value(src)
         self.set_operand_value(dest_str, value)
-        # _print removido
 
     def op_INC(self, inst, parts):
         target = parts[1]
+        
+        # 16 Bits (com blindagem)
         if target in ['BC', 'DE', 'HL', 'SP']:
             val = self.get_operand_value(target)
             val = (val + 1) & 0xFFFF
             self.set_operand_value(target, val)
             return
+
+        # 8 Bits
         val = self.get_operand_value(target)
         result = (val + 1) & 0xFF
         self.set_operand_value(target, result)
+
         self.F &= ~FLAG_N
         if result == 0: self.F |= FLAG_Z
         else: self.F &= ~FLAG_Z
+        
         if (val & 0x0F) + 1 > 0x0F: self.F |= FLAG_H
         else: self.F &= ~FLAG_H
 
     def op_DEC(self, inst, parts):
         target = parts[1]
+        
+        # 16 Bits (com blindagem)
         if target in ['BC', 'DE', 'HL', 'SP']:
             val = self.get_operand_value(target)
             val = (val - 1) & 0xFFFF
             self.set_operand_value(target, val)
             return
+
+        # 8 Bits
         val = self.get_operand_value(target)
         result = (val - 1) & 0xFF
         self.set_operand_value(target, result)
+
         self.F |= FLAG_N
         if result == 0: self.F |= FLAG_Z
         else: self.F &= ~FLAG_Z
+
         if (val & 0x0F) == 0: self.F |= FLAG_H
         else: self.F &= ~FLAG_H
 
@@ -337,19 +376,22 @@ class CPU:
 
     def op_PUSH(self, inst, parts):
         val = self.get_operand_value(parts[1])
-        self.SP -= 1
+        self.SP = (self.SP - 1) & 0xFFFF
         self.mmu.write_byte(self.SP, (val >> 8) & 0xFF)
-        self.SP -= 1
+        self.SP = (self.SP - 1) & 0xFFFF
         self.mmu.write_byte(self.SP, val & 0xFF)
 
     def op_POP(self, inst, parts):
         low = self.mmu.read_byte(self.SP)
-        self.SP += 1
+        self.SP = (self.SP + 1) & 0xFFFF
         high = self.mmu.read_byte(self.SP)
-        self.SP += 1
+        self.SP = (self.SP + 1) & 0xFFFF
         val = (high << 8) | low
+        
         target = parts[1]
-        if target == 'AF': val &= 0xFFF0
+        if target == 'AF':
+            val &= 0xFFF0
+        
         self.set_operand_value(target, val)
 
     def op_JP(self, inst, parts):
@@ -360,44 +402,55 @@ class CPU:
                 self.PC = dest
         else: 
             operand = parts[1]
-            if operand == '(HL)': self.PC = (self.H << 8) | self.L
+            if operand == '(HL)':
+                self.PC = (self.H << 8) | self.L
             else:
                 dest = self.get_operand_value(operand)
                 self.PC = dest
 
     def op_JR(self, inst, parts):
         jump = True
+        
         if len(parts) > 2:
             cond = parts[1]
+            if not self.check_condition(cond):
+                jump = False
             raw_offset = self.get_operand_value(parts[2])
-            if not self.check_condition(cond): jump = False
         else:
             raw_offset = self.get_operand_value(parts[1])
+
         if raw_offset > 127: raw_offset -= 256
-        if jump: self.PC += raw_offset
+        
+        if jump:
+            self.PC = (self.PC + raw_offset) & 0xFFFF # BLINDAGEM DE JUMP
 
     def op_CALL(self, inst, parts):
         dest = 0
         should_call = True
+        
         if len(parts) > 2:
             dest = self.get_operand_value(parts[2])
-            if not self.check_condition(parts[1]): should_call = False
+            if not self.check_condition(parts[1]):
+                should_call = False
         else:
             dest = self.get_operand_value(parts[1])
+            
         if should_call:
-            self.SP -= 1
+            self.SP = (self.SP - 1) & 0xFFFF
             self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
-            self.SP -= 1
+            self.SP = (self.SP - 1) & 0xFFFF
             self.mmu.write_byte(self.SP, self.PC & 0xFF)
             self.PC = dest
 
     def op_RET(self, inst, parts):
         if len(parts) > 1:
-            if not self.check_condition(parts[1]): return
+            if not self.check_condition(parts[1]):
+                return
+
         low = self.mmu.read_byte(self.SP)
-        self.SP += 1
+        self.SP = (self.SP + 1) & 0xFFFF
         high = self.mmu.read_byte(self.SP)
-        self.SP += 1
+        self.SP = (self.SP + 1) & 0xFFFF
         self.PC = (high << 8) | low
 
     def check_condition(self, cond):
@@ -409,7 +462,7 @@ class CPU:
     
     def op_DI(self, inst, parts): self.ime = False
     def op_EI(self, inst, parts): self.ime = True
-    def op_HALT(self, inst, parts): pass # _print removido
+    def op_HALT(self, inst, parts): pass
     def op_STOP(self, inst, parts): pass
     
     def op_RLCA(self, inst, parts):
@@ -438,30 +491,33 @@ class CPU:
 
     def op_RETI(self, inst, parts):
         low = self.mmu.read_byte(self.SP)
-        self.SP += 1
+        self.SP = (self.SP + 1) & 0xFFFF
         high = self.mmu.read_byte(self.SP)
-        self.SP += 1
+        self.SP = (self.SP + 1) & 0xFFFF
         self.PC = (high << 8) | low
         self.ime = True
     
     def op_RST(self, inst, parts):
         dest_str = parts[1].replace('H', '')
         dest = int(dest_str, 16)
-        self.SP -= 1
+        
+        self.SP = (self.SP - 1) & 0xFFFF
         self.mmu.write_byte(self.SP, (self.PC >> 8) & 0xFF)
-        self.SP -= 1
+        self.SP = (self.SP - 1) & 0xFFFF
         self.mmu.write_byte(self.SP, self.PC & 0xFF)
+        
         self.PC = dest
-        # _print removido
     
     def op_LDH(self, inst, parts):
         dest = parts[1]
         src = parts[2]
+
         if dest == '(a8)':
             offset = self.get_operand_value('a8')
             address = 0xFF00 + offset
             val = self.get_operand_value(src)
             self.mmu.write_byte(address, val)
+
         elif src == '(a8)':
             offset = self.get_operand_value('a8')
             address = 0xFF00 + offset
@@ -470,10 +526,12 @@ class CPU:
 
     def op_PREFIX(self, inst, parts):
         cb_opcode = self.mmu.read_byte(self.PC)
-        self.PC += 1
+        self.PC = (self.PC + 1) & 0xFFFF # avança e protege o PC
+
         reg_id = cb_opcode & 0x07
         bit = (cb_opcode >> 3) & 0x07
         operation = (cb_opcode >> 6) & 0x03
+        
         reg_map = {0: 'B', 1: 'C', 2: 'D', 3: 'E', 4: 'H', 5: 'L', 6: '(HL)', 7: 'A'}
         operand_str = reg_map[reg_id]
 
@@ -484,18 +542,22 @@ class CPU:
             else: self.F &= ~FLAG_Z
             self.F &= ~FLAG_N 
             self.F |= FLAG_H  
+            
         elif operation == 2:
             val = self.get_operand_value(operand_str)
             result = val & ~(1 << bit)
             self.set_operand_value(operand_str, result)
+            
         elif operation == 3:
             val = self.get_operand_value(operand_str)
             result = val | (1 << bit)
             self.set_operand_value(operand_str, result)
+            
         elif operation == 0:
             rot_type = (cb_opcode >> 3) & 0x07
             val = self.get_operand_value(operand_str)
             result = 0
+            
             carry_flag = 1 if (self.F & FLAG_C) else 0
             bit7 = (val >> 7) & 1
             bit0 = val & 1
@@ -504,24 +566,31 @@ class CPU:
                 case 0:
                     result = ((val << 1) | bit7) & 0xFF
                     self.F = FLAG_C if bit7 else 0
+
                 case 1:
                     result = ((val >> 1) | (bit0 << 7)) & 0xFF
                     self.F = FLAG_C if bit0 else 0
+
                 case 2:
                     result = ((val << 1) | carry_flag) & 0xFF
                     self.F = FLAG_C if bit7 else 0
+
                 case 3:
                     result = ((val >> 1) | (carry_flag << 7)) & 0xFF
                     self.F = FLAG_C if bit0 else 0
+
                 case 4:
                     result = (val << 1) & 0xFF
                     self.F = FLAG_C if bit7 else 0
+
                 case 5:
                     result = (val >> 1) | (val & 0x80)
                     self.F = FLAG_C if bit0 else 0
+
                 case 6:
                     result = ((val & 0xF0) >> 4) | ((val & 0x0F) << 4)
                     self.F = 0
+
                 case 7:
                     result = (val >> 1)
                     self.F = FLAG_C if bit0 else 0
@@ -541,3 +610,76 @@ class CPU:
         val &= 0xFFFF
         self.H = (val >> 8) & 0xFF
         self.L = val & 0xFF
+
+
+    def op_RRCA(self, inst, parts):
+        bit0 = self.A & 1
+        self.A = ((self.A >> 1) | (bit0 << 7)) & 0xFF
+        self.F = FLAG_C if bit0 else 0
+        
+    def op_RRA(self, inst, parts):
+        bit0 = self.A & 1
+        carry = 1 if (self.F & FLAG_C) else 0
+        self.A = ((self.A >> 1) | (carry << 7)) & 0xFF
+        self.F = FLAG_C if bit0 else 0
+
+    def op_SCF(self, inst, parts):
+        self.F &= ~(FLAG_N | FLAG_H) 
+        self.F |= FLAG_C             
+
+    def op_CCF(self, inst, parts):
+        self.F &= ~(FLAG_N | FLAG_H) 
+        self.F ^= FLAG_C             
+
+    def op_SBC(self, inst, parts):
+        val = self.get_operand_value(parts[2]) 
+        carry = 1 if (self.F & FLAG_C) else 0
+        result = self.A - val - carry
+        
+        self.F = FLAG_N
+        if (result & 0xFF) == 0: self.F |= FLAG_Z
+        
+        if (self.A & 0x0F) < (val & 0x0F) + carry: self.F |= FLAG_H
+        
+        if result < 0: self.F |= FLAG_C
+        
+        self.A = result & 0xFF
+
+    def op_DAA(self, inst, parts):
+
+        a = self.A
+
+        if not (self.F & FLAG_N):
+            if(self.F & FLAG_H) or (a > 0x0F) > 9:
+                a += 0x06
+            if(self.F & FLAG_C) or (a > 0x9F):
+                a += 0x60
+                self.F |= FLAG_C
+        else:
+            if(self.F & FLAG_H):
+                a -= 0x06
+            if(self.F & FLAG_C):
+                a -= 0x60
+        self.A = a & 0xFF
+
+        if self.A == 0: self.F |= FLAG_Z
+        else: self.F &= ~FLAG_Z
+
+        self.F &= ~FLAG_H
+
+    def op_LD_HL_SP (self, inst, parts):
+
+        offset = self.get_operand_value('r8')
+        if offset > 127: offset -= 256
+
+        sp_val = self.SP
+        result = (sp_val + offset) & 0xFFFF
+        self.F = 0 
+
+        if (sp_val & 0x0F) + (offset & 0x0F) > 0x0F: self.F |= FLAG_H
+        if (sp_val & 0xFF) + (offset & 0xFF) > 0xFF: self.F |= FLAG_C
+
+        self.H = (result >> 8) & 0x0F
+        self.L = result & 0xFF
+        return 
+    

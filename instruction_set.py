@@ -26,7 +26,7 @@ instructions = {
     0x36: Instruction('LD_(HL)_d8', 2, 12),
     0x77: Instruction('LD_(HL)_A', 1, 8), 0xEA: Instruction('LD_(a16)_A', 3, 16), 0x56: Instruction('LD_D_(HL)', 1, 8),
     0x5E: Instruction('LD_E_(HL)', 1, 8), 0xE0: Instruction('LDH_(a8)_A', 2, 12), 0xF0: Instruction('LDH_A_(a8)', 2, 12),
-    0xE2: Instruction('LD_(C)_A', 1, 8), 0xF2: Instruction('LD_A_(C)', 1, 8),
+    0xE2: Instruction('LD_(C)_A', 1, 8), 0xF2: Instruction('LD_A_(C)', 1, 8), 0x08: Instruction('LD_(a16)_SP', 3, 20),
     0x7A: Instruction('LD_A_D', 1, 4), 
     0x7B: Instruction('LD_A_E', 1, 4), 
     0x7C: Instruction('LD_A_H', 1, 4), 
@@ -36,13 +36,14 @@ instructions = {
     # Loads 16-bit
     0x01: Instruction('LD_BC_d16', 3, 12), 0x11: Instruction('LD_DE_d16', 3, 12),
     0x21: Instruction('LD_HL_d16', 3, 12), 0x31: Instruction('LD_SP_d16', 3, 12),
+    0xF8: Instruction('LD_HL_SP+r8', 2, 12),
     
     # ALU (INC/DEC)
     0x05: Instruction('DEC_B', 1, 4), 0x0C: Instruction('INC_C', 1, 4),
     0x0D: Instruction('DEC_C', 1, 4), 0x23: Instruction('INC_HL', 1, 8), 0x0B: Instruction('DEC_BC', 1, 8),
     
     # ALU (ADD/ADC/SUB/CP)
-    0x87: Instruction('ADD_A_A', 1, 4), 0x80: Instruction('ADD_A_B', 1, 4), 0x81: Instruction('ADD_A_C', 1, 4),
+    0x87: Instruction('ADD_A_A', 1, 4), 0x80: Instruction('ADD_A_B', 1, 4), 0x81: Instruction('ADD_A_C', 1, 4), 0xE8: Instruction('ADD_SP_r8', 2, 16),
     0x82: Instruction('ADD_A_D', 1, 4), 0x83: Instruction('ADD_A_E', 1, 4), 0x84: Instruction('ADD_A_H', 1, 4),
     0x85: Instruction('ADD_A_L', 1, 4), 0x86: Instruction('ADD_A_(HL)', 1, 8), 0xC6: Instruction('ADD_A_d8', 2, 8),
     
@@ -52,7 +53,22 @@ instructions = {
     
     0x90: Instruction('SUB_A_B', 1, 4), 0x91: Instruction('SUB_A_C', 1, 4), 0xD6: Instruction('SUB_A_d8', 2, 8),
     
-    0xFE: Instruction('CP_d8', 2, 8), 0xBD: Instruction('CP_L', 1, 4),
+    0xFE: Instruction('CP_d8', 2, 8), 0xB8: Instruction('CP_B', 1, 4),
+    0xB9: Instruction('CP_C', 1, 4),
+    0xBA: Instruction('CP_D', 1, 4),
+    0xBB: Instruction('CP_E', 1, 4),
+    0xBC: Instruction('CP_H', 1, 4),
+    0xBD: Instruction('CP_L', 1, 4),
+    0xBE: Instruction('CP_(HL)', 1, 8), # CRÍTICA!
+    0xBF: Instruction('CP_A', 1, 4),
+
+    0xC4: Instruction('CALL_NZ_a16', 3, 24),
+    0xCC: Instruction('CALL_Z_a16', 3, 24),
+    0xD4: Instruction('CALL_NC_a16', 3, 24),
+    0xDC: Instruction('CALL_C_a16', 3, 24),
+
+    # Necessária para a PONTUAÇÃO (Score) funcionar corretamente
+    0x27: Instruction('DAA', 1, 4),
     
     # Logic (AND/OR/XOR)
     0xAF: Instruction('XOR_A', 1, 4), 0xA9: Instruction('XOR_C', 1, 4), 0xA1: Instruction('AND_C', 1, 4),
@@ -118,6 +134,16 @@ instructions = {
     0x13: Instruction('INC_DE', 1, 8), 0x1B: Instruction('DEC_DE', 1, 8),
     0x23: Instruction('INC_HL', 1, 8), 0x2B: Instruction('DEC_HL', 1, 8),
     0x33: Instruction('INC_SP', 1, 8), 0x3B: Instruction('DEC_SP', 1, 8),
+
+    0x0F: Instruction('RRCA', 1, 4),
+    0x1F: Instruction('RRA', 1, 4),
+    
+    0xEE: Instruction('XOR_d8', 2, 8),
+    0xF6: Instruction('OR_d8', 2, 8),
+    0xDE: Instruction('SBC_A_d8', 2, 8), # Subtract with Carry immediate
+    
+    0x37: Instruction('SCF', 1, 4), # Set Carry Flag
+    0x3F: Instruction('CCF', 1, 4),
 
     
 }
